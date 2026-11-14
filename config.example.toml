@@ -1,0 +1,8 @@
+# Copy to config.toml. Never put tokens or secret values here.
+[storage]
+# Empty: D:/MelodyVaultData when D: exists; else LOCALAPPDATA/MelodyVault.
+# Relative paths resolve against this file. Access errors never change the path silently.
+data_root = ""
+
+[logging]
+level = "INFO"

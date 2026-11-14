@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "melodyvault"
+version = "0.1.0"
+description = "Windows desktop foundation for a permission-aware personal music library"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["PySide6>=6.8,<7", "httpx>=0.28,<1", "opencc-python-reimplemented>=0.1.7,<0.2", "pypinyin>=0.55,<1", "mutagen>=1.47,<2"]
+
+[project.optional-dependencies]
+test = ["pytest>=8,<10"]
+browser = ["playwright>=1.49,<2"]
+cloud = ["google-api-python-client>=2.150,<3", "google-auth-oauthlib>=1.2,<2"]
+audio = ["mutagen>=1.47,<2"]
+packaging = ["pyinstaller>=6.11,<7"]
+
+[project.scripts]
+melodyvault = "melodyvault.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = ["gui: real Qt event-loop smoke tests", "live: opt-in real MusicBrainz integration"]
+filterwarnings = ["error"]

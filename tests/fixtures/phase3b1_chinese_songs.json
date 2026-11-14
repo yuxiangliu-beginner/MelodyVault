@@ -1,0 +1,10 @@
+[
+  {"artist":"周杰伦","aliases":["Jay Chou","周杰倫"],"titles":["晴天","七里香","稻香","青花瓷","夜曲"]},
+  {"artist":"林俊杰","aliases":["JJ Lin","林俊傑"],"titles":["江南","曹操","小酒窝","一千年以后","修炼爱情"]},
+  {"artist":"周传雄","aliases":["Steve Chou","小刚","周傳雄"],"titles":["黄昏","寂寞沙洲冷","蓝色土耳其","我的心太乱","关不上的窗"]},
+  {"artist":"张惠妹","aliases":["A-Mei","張惠妹"],"titles":["听海","记得","真实","解脱","连名带姓"]},
+  {"artist":"草东没有派对","aliases":["No Party for Cao Dong","草東沒有派對"],"titles":["大风吹","山海","烂泥"],"category":"independent_band"},
+  {"artist":"告五人","aliases":["Accusefive"],"titles":["爱人错过","披星戴月的想你","在这座城市遗失了你"],"category":"independent_band"},
+  {"artist":"陈粒","aliases":["Chen Li","陳粒"],"titles":["奇妙能力歌","小半","易燃易爆炸"],"category":"independent_singer_songwriter"},
+  {"artist":"Li Yao Ming","aliases":["solos_to_use"],"titles":["The King 之王"],"version":"cover","native_upload_id":"49286","category":"cantonese_acappella_cover_cc_by_nc_3_unresolved_composition_rights"}
+]
