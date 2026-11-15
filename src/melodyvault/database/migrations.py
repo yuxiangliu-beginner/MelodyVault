@@ -98,6 +98,11 @@ MIGRATIONS = (
         "CREATE INDEX idx_discovery_history_domain ON source_discovery_history(domain,created_at)",
         "CREATE INDEX idx_verification_history_domain ON source_verification_history(domain,created_at)",
     )),
+    Migration(9, "automated_search_sessions", (
+        "CREATE TABLE pipeline_sessions (id TEXT PRIMARY KEY, query_json TEXT NOT NULL, status TEXT NOT NULL, result_json TEXT NOT NULL DEFAULT '{}', started_at TEXT NOT NULL, finished_at TEXT)",
+        "CREATE TABLE pipeline_source_attempts (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES pipeline_sessions(id), payload_json TEXT NOT NULL, created_at TEXT NOT NULL)",
+        "CREATE INDEX pipeline_attempts_session ON pipeline_source_attempts(session_id,created_at)",
+    )),
 )
 
 

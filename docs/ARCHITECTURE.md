@@ -1,5 +1,18 @@
 # MelodyVault 架构
 
+## Phase 3B.2（开发中）
+
+`MainWindow → SearchWorker / UnifiedSearchEngine → PipelineWorker → UnifiedMusicSearchService`。
+歌曲身份先基于 SQLite / MusicBrainz；同名、不同歌手或多个录音无法可靠区分时要求用户选择。歌手目录支持多选明确歌曲或录音，不自动处理整位歌手。
+
+`UnifiedMusicSearchService → SearchOrchestrator → MusicProviderAdapter → SourceSearchEngine` 按来源有界并发运行原有搜索与缓存，保持同一持久化来源任务并逐个返回候选。网易云/Bilibili/抖音受限，YouTube 官方元数据客户端无密钥不请求，品牌展示审核未完成时也禁止启用；YouTube 结果查看目前禁用，通过后续核验后候选仅存临时内存、单独展示，不进入下载候选。
+
+`SourceFallbackManager → DownloadEligibilityService → DownloadManager`：对每个候选先刷新文件权限和录音身份，**只有资格通过才建下载任务**；下载管理器再次核验。限制任务 ID 可避免启动其他排队任务，单次一键下载或 dry-run 不覆盖用户保存的全局设置。失败或取消记录逐项存入 SQLite，不把 READY、SKIPPED 或 NO_SOURCE 称作下载完成。
+
+schema 9 增加一键会话和逐来源尝试。独立跨进程锁防止并发恢复时误判正在运行的任务；下次启动任务时将遗留 running 会话标为 INTERRUPTED。现有下载队列可恢复暂停状态，统一搜索任务尚不能自动从断点继续。
+
+yt-dlp、FFmpeg 与 FFprobe 媒体后端尚未实现；没有经过确认允许提取的视频来源。本机当前未检测到这些工具。30 首中文歌曲的授权下载仍为 0；完整真实/模拟测试与限制见 [Phase 3B.2 验证](validation/PHASE3B2_VALIDATION.md)。
+
 ## 当前实现：Phase 3B.1（等待验收）
 
 新增来源发现域 `discovery/` 与 `database/discovery.py`，不替换现有目录、搜索或下载领域。schema 8 追加网站、能力、发现/核验历史和查询缓存；原 v1–7 不变。

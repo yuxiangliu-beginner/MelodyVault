@@ -1,3 +1,25 @@
+# Phase 3B.2 开发审计（进行中）
+
+已加入 YouTube 官方 search/videos 元数据客户端：无 key 返回 NOT_CONFIGURED，密钥放请求头并脱敏；仅模拟测试，未真实联网验证。结果查看目前禁用，通过后续核验后数据仅驻留短期内存、独立展示，不参与录音合并或下载；官方品牌展示规范尚未验收，配置 key 后仍保持 RESTRICTED，不影响其他来源。
+
+GD 官方文档本轮真实 HTTP 200：仅限学习参考，明确禁止下载、传播和商用，5 分钟最多 50 次请求；此类聚合数据不被作为下载授权，自动收藏用途的检索许可尚未明确。
+
+最新进展：已连接一键界面、歌曲身份确认、SearchOrchestrator 与现有音乐来源、单文件双重资格核验、限定任务运行及来源回退；每个音乐来源独立并发并逐个展示，来源失败互不阻断；歌手目录支持选择多个已确认歌曲或明确录音版本，不自动处理整个目录。单次一键可选实际下载或 dry-run，不改变全局设置。新增 schema 9 会话和来源尝试表。
+
+真实隔离 CLI 与 Windows GUI 均完成英文 CC 控制样本的身份搜索→Recording 选择→Commons 搜索→核验→下载→SHA-256/SQLite 归档；MP3 5,369,410 字节，SHA-256 `4303f2a73ffd4e872503eb0898f62d7d0b9f1f15c783fcb3495e01c7383b6c00`；不计中文。30 首中文真实查询 5 首候选、7 文件许可未验证、25 首无结果、0 授权下载，耗时 812.19 秒。
+
+尚未完成：yt-dlp/FFmpeg/FFprobe 视频处理后端，中文授权音频端到端，统一会话自动断点续搜，四个平台的合规真实搜索，额外格式真实下载验证；不将测试样本或搜索命中冒充完成。完整报告：`docs/validation/PHASE3B2_VALIDATION.md` 和 `docs/validation/PHASE3B2_COVERAGE_REPORT.md`。最新启用在线测试的全量 pytest **213 passed、0 skipped（331.42 秒）**；YouTube 接口仅使用模拟响应验证。正式库已升级至 schema 9，2,055 原始录音哈希一致，3 个旧任务及 68 个来源逐行保留。
+
+2026-11-14：正式库实际 schema 8，Recording 2,055，人工审核 0，下载任务 3，来源注册 68；开发前 Git main 干净，origin 为 MelodyVault 仓库。备份与原始录音哈希保存在 `.local/reports/phase3b2/`。开发前 pytest：192 passed、2 skipped（未启用在线测试）；网易云受限边界定向测试 2 passed。
+
+SuiSound 项目位于 `E:\users\yliu\SuiSound`，已只读审计 `lib/services/gd_source.dart` 和 `docs/chinese-catalog-review.md`。其网易来源实际依赖第三方 GD 聚合服务，不能证明网易接口或录音下载许可；官方网易搜索 API 和应用使用条件尚未核实。已增加默认禁用的 `NeteaseMusicSearchProvider` 边界，明确报告 RESTRICTED，不访问聚合站或隐藏接口；搜索、身份匹配与下载功能尚未实现。
+
+YouTube 官方开发者政策对音视频下载及跨内容所有者的 API 数据聚合有明确限制，需在实现前评估；参见 https://developers.google.com/youtube/terms/developer-policies/ 。当时的统一搜索、调度、回退、GUI 和迁移尚未接入；现在的状态以上述最新进展为准。媒体后端和本阶段 Git 交付仍待完成。
+
+补充要求：以用户最新 A → B → C 方案为目标，加入 Douyin；用户确认没有 YouTube Data API 密钥，本轮需明确 NOT_CONFIGURED。抖音官方关键词视频管理接口需要申请特殊权限、用户授权及与业务紧密相关的关键词，且仅返回最近一天的视频，不能假定它允许通用歌曲检索：https://open.douyin.com/platform/resource/docs/ability/search-management/video/ 。这些限制不妨碍继续开发允许访问的其他来源。
+
+已新增独立的统一候选结构与有界 `SearchOrchestrator` 基础，覆盖来源故障隔离、逐个返回、取消及按来源 URL/录音/版本去重；这是当时仅有的基础，随后已接入现有来源、界面及下载；来源继续复用各自的缓存、限速和请求超时。该次基础定向测试 5 passed；上述初始全量回归并非最终 Phase 3B.2 验收。
+
 # 当前阶段总览（2026-11-14）
 
 **Phase 3B.1 开发与测试完成，等待验收；不进入 Phase 3C。** 下文历史 Phase 0–8 记录保留；新的未来范围以本表和 README 为准。

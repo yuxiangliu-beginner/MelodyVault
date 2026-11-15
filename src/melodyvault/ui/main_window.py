@@ -1,6 +1,7 @@
 from pathlib import Path
 import json
-from PySide6.QtCore import Qt, Slot, QTimer
+from PySide6.QtCore import Qt, Slot, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QDialog, QDialogButtonBox, QHeaderView, QHBoxLayout,
     QLabel, QLineEdit, QListWidget, QMainWindow, QProgressBar, QPushButton,
@@ -22,6 +23,7 @@ class MainWindow(QMainWindow):
         self.evidence_worker = None
         self._deferred_catalog = None
         self._search_generation=0;self._search_workers=set();self._catalog_workers=set();self.search_worker=None;self._queued_song_source=None
+        self.pipeline_worker=None;self._pipeline_requested=False;self._platform_statuses={};self._youtube_results=[]
         self.setWindowTitle("MelodyVault")
         self.resize(1040, 720)
         layout = QVBoxLayout()
@@ -41,22 +43,31 @@ class MainWindow(QMainWindow):
         self.search_button.clicked.connect(self.start_search)
         self.artist_input.returnPressed.connect(self.start_search)
         row.addWidget(self.search_button)
+        self.pipeline_button=QPushButton('搜索并下载');self.pipeline_button.setObjectName('searchAndDownloadButton')
+        self.pipeline_button.clicked.connect(self.start_pipeline_search);row.addWidget(self.pipeline_button)
         self.cancel_button = QPushButton("取消搜索")
         self.cancel_button.setEnabled(False)
         self.cancel_button.clicked.connect(self.cancel_search)
         row.addWidget(self.cancel_button)
         self.review_button=QPushButton('待确认作品审核')
         self.review_button.setObjectName('reviewButton');self.review_button.setEnabled(False)
-        self.review_button.clicked.connect(self.open_review);row.addWidget(self.review_button)
+        self.review_button.clicked.connect(self.open_review)
         self.refresh_catalog_button=QPushButton('刷新歌曲目录')
-        self.refresh_catalog_button.clicked.connect(self._refresh_artist);row.addWidget(self.refresh_catalog_button)
+        self.refresh_catalog_button.clicked.connect(self._refresh_artist)
         layout.addLayout(row)
         options=QHBoxLayout();layout.addLayout(options)
         self.search_mode=QComboBox();self.search_mode.addItem('智能识别','smart');self.search_mode.addItem('歌手','artist');self.search_mode.addItem('歌曲','song')
         options.addWidget(self.search_mode)
         self.artist_filter=QLineEdit();self.artist_filter.setPlaceholderText('可选歌手条件：用于修正歌曲搜索，不自动选择同名歌手');options.addWidget(self.artist_filter,1)
-        self.local_only=QCheckBox('仅本地搜索');options.addWidget(self.local_only)
-        self.clear_button=QPushButton('清空结果');options.addWidget(self.clear_button);self.clear_button.clicked.connect(self.clear_results)
+        self.local_only=QCheckBox('本地识别（音源仍联网）');options.addWidget(self.local_only)
+        pipeline_options=QHBoxLayout();layout.addLayout(pipeline_options)
+        self.pipeline_dry_run=QCheckBox('下载演练（不保存音频）');pipeline_options.addWidget(self.pipeline_dry_run)
+        self.pipeline_selected_button=QPushButton('对已选歌曲搜索并下载');self.pipeline_selected_button.setEnabled(False);pipeline_options.addWidget(self.pipeline_selected_button)
+        self.pipeline_selected_button.clicked.connect(self.start_selected_pipeline)
+        self.clear_button=QPushButton('清空结果');pipeline_options.addWidget(self.clear_button);pipeline_options.addStretch(1);self.clear_button.clicked.connect(self.clear_results)
+        self.youtube_results_button=QPushButton('查看 YouTube 结果');self.youtube_results_button.setEnabled(False)
+        self.youtube_results_button.clicked.connect(self.show_youtube_results);pipeline_options.addWidget(self.youtube_results_button)
+        pipeline_options.addWidget(self.review_button);pipeline_options.addWidget(self.refresh_catalog_button)
         self.search_mode.currentIndexChanged.connect(self._mode_changed)
         self.refresh_checkbox = QCheckBox("重新从 MusicBrainz 获取（忽略本地页面缓存）")
         layout.addWidget(self.refresh_checkbox)
@@ -95,6 +106,7 @@ class MainWindow(QMainWindow):
         self.song_table.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.song_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.song_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.song_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.song_table.setSortingEnabled(False)
         layout.addWidget(self.song_table, 1)
         from melodyvault.ui.source_page import SourcePage
@@ -118,6 +130,7 @@ class MainWindow(QMainWindow):
         for w in (self.evidence_button,self.evidence_force,self.evidence_cancel,self.evidence_label):evidence_row.addWidget(w)
         self.evidence_button.clicked.connect(self.start_evidence);self.evidence_cancel.clicked.connect(lambda:self.evidence_worker.cancel() if self.evidence_worker else None)
         self.source_task_label=QLabel('音源任务：等待开始');self.source_task_label.setWordWrap(True);root_layout.addWidget(self.source_task_label)
+        self.platform_status_label=QLabel('其他来源：等待查询');self.platform_status_label.setWordWrap(True);root_layout.addWidget(self.platform_status_label)
         self.source_page.task_progress.connect(self._source_progress);self.source_page.statuses_changed.connect(self._source_states)
         self.source_page.workers_finished.connect(self._other_finished)
         self.source_page.workers_finished.connect(self._launch_queued_source)
@@ -171,7 +184,8 @@ class MainWindow(QMainWindow):
         self.search_worker=None;self.worker=None
 
     @Slot()
-    def start_search(self, selected_mbid=None, force_refresh=False, force_online=False):
+    def start_search(self, selected_mbid=None, force_refresh=False, force_online=False, _pipeline=False):
+        if not _pipeline:self._pipeline_requested=False
         if self.search_mode.currentData()=='artist' and not self.local_only.isChecked():
             self._start_catalog(selected_mbid,force_refresh);return
         from melodyvault.search.models import SearchRequest
@@ -190,12 +204,55 @@ class MainWindow(QMainWindow):
         self.review_button.setEnabled(False);self.evidence_button.setEnabled(False);self.refresh_catalog_button.setEnabled(False)
         worker.start()
 
+    def start_pipeline_search(self):
+        if self.pipeline_worker is not None:return
+        self._youtube_results=[];self.youtube_results_button.setEnabled(False)
+        self._pipeline_requested=True
+        self.start_search(_pipeline=True)
+
+    def start_selected_pipeline(self):
+        if self.pipeline_worker is not None or self.last_result is None:return
+        self._youtube_results=[];self.youtube_results_button.setEnabled(False)
+        from dataclasses import replace
+        from melodyvault.search.pipeline_worker import BatchPipelineWorker
+        chosen=[];seen=set();unresolved=0
+        songs={s.id:s for s in self.last_result.songs}
+        for item in self.song_table.selectedItems():
+            data=item.data(0,Qt.ItemDataRole.UserRole) or {}
+            parent=item.parent();base=(parent.data(0,Qt.ItemDataRole.UserRole) or {}) if parent else data
+            song=songs.get(base.get('song_id'))
+            if song is None:continue
+            rid=data.get('recording_mbid') if parent else song.primary_recording_mbid
+            if not rid or not parent and song.pending_confirmation:
+                unresolved+=1;continue
+            key=(song.id,rid)
+            if key in seen:continue
+            seen.add(key)
+            if parent:
+                record=next((r for r in song.recordings if r.mbid==rid),None)
+                if not record:continue
+                chosen.append((replace(song,recordings=[record],primary_recording_mbid=rid),True))
+            else:chosen.append((song,False))
+        if not chosen:
+            self.progress_label.setText('请选择已确认歌曲，或展开并选择具体录音版本。');return
+        self._pipeline_requested=False;self._platform_statuses={};self.source_page._rendered=-1
+        worker=BatchPipelineWorker(self.database_path,self.last_result.artist,chosen,self,dry_run=self.pipeline_dry_run.isChecked())
+        self.pipeline_worker=worker;worker.progress.connect(self._pipeline_progress);worker.completed.connect(self._pipeline_completed)
+        worker.failed.connect(lambda text:self.progress_label.setText('任务失败：'+text));worker.finished.connect(self._pipeline_finished)
+        self._set_busy(True);self.pipeline_button.setEnabled(False);self.cancel_button.setEnabled(True)
+        self.progress_label.setText(f'已选择 {len(chosen)} 个录音；跳过 {unresolved} 个身份不明确的条目。');worker.start()
+
     def _search_ready(self,result):
         self.unified_results.show_result(result);self.song_table.hide();self.progress_bar.setRange(0,1);self.progress_bar.setValue(1)
         self.search_button.setText('搜索')
         self.statistics_label.setText(f'歌手候选 {len(result.artists)} · 录音候选 {len(result.songs)} · 待确认 {sum(c.pending_confirmation for c in result.songs)} · 查询错误 {len(result.errors)}')
         self.statusBar().showMessage('元数据检索已结束；请选择身份和版本，尚未开始音源搜索')
         self.progress_label.setText('请选择歌手目录或具体歌曲版本；不会自动选择同名歌曲。'+(' 部分查询失败，详见候选区域。' if result.errors else ''))
+        if self._pipeline_requested and result.request.mode!='artist':
+            exact=[s for s in result.songs if s.title_exact and not s.pending_confirmation]
+            singer_identified=bool(result.request.artist_hint or result.request.artist_ids or result.title_query!=result.request.query)
+            if singer_identified and len(exact)==1 and not result.errors:
+                self._confirm_song(exact[0]);return
         if result.request.mode=='smart' and result.scope=='sqlite' and len(result.artists)==1 and not result.songs and result.title_query==result.request.query:
             from melodyvault.database.catalog import CatalogRepository
             previous=CatalogRepository(self.database_path).resolved_artist(result.request.query)
@@ -205,6 +262,7 @@ class MainWindow(QMainWindow):
         self.unified_results.show_result(result);self.progress_label.setText('已显示本地候选；正在补充其他歌手/版本，不会因本地只存一位歌手就自动选定原唱。')
 
     def _enter_artist(self,artist):
+        self._pipeline_requested=False
         if self.local_only.isChecked():
             from melodyvault.database.catalog import CatalogRepository
             if not CatalogRepository(self.database_path).songs(artist.mbid):
@@ -225,8 +283,67 @@ class MainWindow(QMainWindow):
         worker.ready.connect(relay.ready);worker.failed.connect(relay.failed);worker.cancelled.connect(relay.cancelled);worker.finished.connect(relay.finished);worker.start()
     def _song_confirmed(self,result):
         self.unified_results.hide();self.song_table.show();self._on_completed(result)
+        if self._pipeline_requested:
+            self._pipeline_requested=False
+            from melodyvault.search.pipeline_worker import PipelineWorker
+            worker=PipelineWorker(self.database_path,result.artist,result.songs[0],self,dry_run=self.pipeline_dry_run.isChecked());self.pipeline_worker=worker
+            self._platform_statuses={};self.source_page._rendered=-1
+            worker.progress.connect(self._pipeline_progress);worker.completed.connect(self._pipeline_completed)
+            worker.failed.connect(lambda text:self.progress_label.setText('任务失败：'+text))
+            worker.finished.connect(self._pipeline_finished);self._set_busy(True)
+            self.pipeline_button.setEnabled(False);self.cancel_button.setEnabled(True);worker.start();return
         self.progress_label.setText('已选择具体录音版本，准备单首音源搜索；这不代表授权或下载成功。')
         self._queued_song_source=(self._search_generation,result);self._launch_queued_source()
+    def _pipeline_progress(self,event):
+        stage=event.get('stage','')
+        if stage=='search':
+            stats=event['stats'];self.source_page._rendered=-1;self.source_page._progress(stats)
+            self.progress_label.setText(f"正在搜索 {stats.get('current_provider') or '音源'}：{stats.get('message','')}")
+        elif stage=='identify':self.progress_label.setText('已选择录音，正在搜索各音源。')
+        elif stage=='batch':self.progress_label.setText(f"处理已选歌曲 {event['completed']+1}/{event['total']}：{event['title']}")
+        elif stage=='source_result':
+            e=event['event']
+            if e['provider_id']!='music_archives':
+                if e['provider_id']=='youtube' and e['status']=='COMPLETED':
+                    self._youtube_results=list(e.get('candidates',[]));self.youtube_results_button.setEnabled(bool(self._youtube_results))
+                self._platform_statuses[e['provider_id']]=e
+                names={'netease':'网易云','youtube':'YouTube','bilibili':'Bilibili','douyin':'抖音','commons':'Commons','archive':'Archive','ccmixter':'ccMixter','jamendo':'Jamendo'}
+                labels={'RESTRICTED':'受限','NOT_CONFIGURED':'未配置','FAILED':'失败','COMPLETED':'已完成'}
+                self.platform_status_label.setText(' · '.join(f"{names.get(k,k)}：{labels.get(v['status'],v['status'])}" for k,v in self._platform_statuses.items()))
+                self.platform_status_label.setToolTip('\n'.join(f"{names.get(k,k)}：{v.get('reason','')}" for k,v in self._platform_statuses.items()))
+        elif stage=='verify_and_download':self.progress_label.setText('正在核验来源及下载资格：'+str(event['source']))
+        elif stage=='download_progress':
+            total=event['total_bytes'];received=event['bytes_received']
+            self.progress_label.setText(f"{event['state']} · {event['reason']} · {received}/{total or '未知'} 字节")
+            if total:self.progress_bar.setRange(0,1000);self.progress_bar.setValue(min(1000,1000*received//total))
+            else:self.progress_bar.setRange(0,0)
+    def _pipeline_completed(self,result):
+        labels={'COMPLETED':'下载完成，文件已校验归档','READY':'资格通过；当前为 dry-run 或实际下载开关关闭',
+                'NO_SOURCE':'没有找到候选音源','SKIPPED':'候选未通过下载资格','FAILED':'任务失败','CANCELLED':'任务已取消','PAUSED':'任务已暂停'}
+        if result['status']=='BATCH_COMPLETED':
+            rows=result['results'];complete=sum(r['status']=='COMPLETED' for r in rows)
+            self.progress_label.setText(f"已处理 {len(rows)}/{result['total']} 个录音；下载完成 {complete}，其他未归档 {len(rows)-complete}。")
+            self.progress_bar.setRange(0,1);self.progress_bar.setValue(1);self.download_page.refresh();return
+        last=result.get('attempts',[])
+        reason=(last[-1].get('reason','') if last else '') or result.get('error','')
+        self.progress_label.setText(labels.get(result['status'],result['status'])+'。'+reason)
+        self.progress_bar.setRange(0,1);self.progress_bar.setValue(1 if result['status']=='COMPLETED' else 0)
+        self.download_page.refresh()
+    def show_youtube_results(self):
+        if not self._youtube_results:return
+        dialog=QDialog(self);dialog.setWindowTitle('YouTube 公开视频 · 仅元数据');dialog.resize(820,420)
+        layout=QVBoxLayout(dialog);notice=QLabel('YouTube 搜索结果单独显示，仅供查看，不进入下载队列。双击可在浏览器打开原网页。')
+        notice.setWordWrap(True);layout.addWidget(notice)
+        tree=QTreeWidget();tree.setHeaderLabels(['标题','频道','时长（秒）','发布时间','原网页']);tree.header().setSectionResizeMode(0,QHeaderView.ResizeMode.Stretch)
+        for candidate in self._youtube_results:
+            item=QTreeWidgetItem([candidate.source_title,candidate.artist_name,str(candidate.duration or '未知'),
+                candidate.raw_source.get('published_at',''),candidate.source_url]);item.setData(0,Qt.ItemDataRole.UserRole,candidate.source_url);tree.addTopLevelItem(item)
+        tree.itemDoubleClicked.connect(lambda item,column:QDesktopServices.openUrl(QUrl(item.data(0,Qt.ItemDataRole.UserRole))))
+        layout.addWidget(tree);dialog.exec()
+    def _pipeline_finished(self):
+        worker=self.pipeline_worker;self.pipeline_worker=None
+        if worker:worker.deleteLater()
+        self.pipeline_button.setEnabled(True);self._set_busy(False);self._other_finished()
     def _launch_queued_source(self):
         if not self._queued_song_source or self.source_page.worker is not None:return
         generation,result=self._queued_song_source;self._queued_song_source=None
@@ -244,6 +361,8 @@ class MainWindow(QMainWindow):
         else:worker.deleteLater()
         self._other_finished()
     def clear_results(self):
+        self._pipeline_requested=False
+        self._youtube_results=[];self.youtube_results_button.setEnabled(False)
         self._invalidate_requests();self.artist_input.clear();self.artist_filter.clear();self.last_result=None
         self.unified_results.clear();self.unified_results.hide();self.song_table.clear();self.song_table.show()
         self.artist_label.setText('尚未选择歌手或歌曲身份')
@@ -256,6 +375,14 @@ class MainWindow(QMainWindow):
     def _requests_running(self):return any(w.isRunning() for w in (*self._search_workers,*self._catalog_workers))
 
     def _set_busy(self, busy: bool) -> None:
+        pipeline_busy=self.pipeline_worker is not None
+        busy=busy or pipeline_busy
+        self.clear_button.setEnabled(not pipeline_busy)
+        self.pipeline_selected_button.setEnabled(not pipeline_busy and self.last_result is not None)
+        self.search_mode.setEnabled(not pipeline_busy)
+        self.local_only.setEnabled(not pipeline_busy)
+        self.pipeline_dry_run.setEnabled(not pipeline_busy)
+        self.artist_filter.setEnabled(not pipeline_busy and self.search_mode.currentData()!='artist')
         self.search_button.setEnabled(not busy)
         self.artist_input.setEnabled(not busy)
         self.refresh_checkbox.setEnabled(not busy)
@@ -282,6 +409,9 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def cancel_search(self) -> None:
+        self._pipeline_requested=False
+        if self.pipeline_worker:
+            self.pipeline_worker.cancel();self.cancel_button.setEnabled(False);self.progress_label.setText('正在取消下载任务；已完成记录保留。')
         if self.search_worker:
             self.search_worker.cancel();self.cancel_button.setEnabled(False);self.progress_label.setText('已请求取消搜索；已保存数据保留。')
         if self.worker is not None:
@@ -382,7 +512,7 @@ class MainWindow(QMainWindow):
             query,selected,force=self._deferred_catalog;self._deferred_catalog=None;self.artist_input.setText(query)
             QTimer.singleShot(0,lambda:self._start_catalog(selected,force,query))
     def _other_finished(self):
-        if self._close_pending and not self._requests_running() and self.worker is None and self.evidence_worker is None and self.source_page.worker is None and self.source_page.browser_worker is None and self.download_page.worker is None and self.discovery_page.worker is None:self.close()
+        if self._close_pending and not self._requests_running() and self.worker is None and self.evidence_worker is None and self.source_page.worker is None and self.source_page.browser_worker is None and self.download_page.worker is None and self.discovery_page.worker is None and self.pipeline_worker is None:self.close()
     def _source_progress(self,stats):
         self.source_task_label.setText(f"{stats.get('artist','')} 音源：{stats['current_song'] or '—'} · {stats['current_provider'] or '—'} · {stats['searched']}/{stats['total']}（{stats['percent']:.1f}%） · 已完成 {stats.get('completed',stats['searched']-stats['failed'])} / 失败 {stats['failed']} / 待处理 {stats['pending']}。{stats['message']}")
     def _source_states(self,payload):
@@ -476,6 +606,13 @@ class MainWindow(QMainWindow):
                 self.progress_label.setText("已取消歌手选择；未搜索或保存错误身份的歌曲。")
 
     def closeEvent(self, event) -> None:
+        if self.pipeline_worker is not None:
+            self._close_pending=True;self.pipeline_worker.cancel()
+            for worker in (*self._search_workers,*self._catalog_workers):worker.cancel()
+            if self.evidence_worker:self.evidence_worker.cancel()
+            self.source_page.cancel();self.download_page.pause_tasks();self.discovery_page.cancel()
+            if self.source_page.browser_worker:self.source_page.browser_worker.cancel()
+            event.ignore();return
         if self.discovery_page.worker is not None:
             self._close_pending=True;self.discovery_page.cancel()
             self.source_page.cancel();self.download_page.pause_tasks()

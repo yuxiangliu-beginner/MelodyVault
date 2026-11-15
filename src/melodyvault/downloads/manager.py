@@ -19,7 +19,7 @@ from melodyvault.database.sources import SourceRepository
 from melodyvault.sources.engine import SourceSearchEngine
 from melodyvault.sources.http import SourceHTTP
 
-_AUDIO_GATES={host:RateGate(1.1) for host in ('commons','archive','jamendo')}
+_AUDIO_GATES={host:RateGate(1.1) for host in ('commons','archive','jamendo','ccmixter')}
 
 
 class RunLock:
@@ -103,18 +103,27 @@ class DownloadManager:
         for jid in self.repository.ids({'FAILED'}):
             self.repository.evidence(jid,'retry','USER_RETRY',{'bounded_new_cycle':True})
             self.repository.update(jid,state='QUEUED',reason_code='',reason='用户明确请求新的有界重试周期',attempt_count=0)
-    def run(self):
+    def run(self, job_ids=None, settings_override=None):
+        if settings_override is not None and job_ids is None:
+            raise ValueError('单次下载设置只能用于明确指定的任务')
         with self.lock:
             if self.running:return
             self.running=True
         try:
             with RunLock(self.path):
-                settings=self.repository.settings();bandwidth=Bandwidth(settings.speed_limit)
+                settings=(settings_override.validate() if settings_override is not None else self.repository.settings());bandwidth=Bandwidth(settings.speed_limit)
                 with ThreadPoolExecutor(max_workers=settings.max_concurrent,thread_name_prefix='MelodyDownload') as pool:
-                    futures=[pool.submit(self._process,jid,settings,bandwidth) for jid in self.repository.ids({'QUEUED'})]
+                    queued=self.repository.ids({'QUEUED'})
+                    if job_ids is not None:
+                        selected=set(job_ids);queued=[jid for jid in queued if jid in selected]
+                    futures=[pool.submit(self._process,jid,settings,bandwidth) for jid in queued]
                     for future in as_completed(futures):future.result();self.progress()
         finally:
-            self.cleanup()
+            if job_ids is None:self.cleanup()
+            else:
+                for jid in set(job_ids):
+                    row=self.repository.get(jid)
+                    if row['state'] in {'FAILED','CANCELLED'}:self._discard_part(row)
             with self.lock:self.running=False
             self.progress()
     def _process(self,jid,current_settings,bandwidth):
