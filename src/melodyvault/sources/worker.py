@@ -9,7 +9,8 @@ from melodyvault.providers.jamendo import JamendoProvider
 
 def default_providers():
     from melodyvault.providers.ccmixter import CCMixterProvider
-    return [ArchiveProvider(),CommonsProvider(),JamendoProvider(os.environ.get('JAMENDO_CLIENT_ID','')),CCMixterProvider()]
+    from melodyvault.providers.openverse import OpenverseProvider
+    return [ArchiveProvider(),CommonsProvider(),JamendoProvider(os.environ.get('JAMENDO_CLIENT_ID','')),CCMixterProvider(),OpenverseProvider()]
 
 
 class SourceWorker(QThread):

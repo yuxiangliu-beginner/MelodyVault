@@ -134,7 +134,7 @@ class SourcePage(QWidget):
     @staticmethod
     def _safe_link(url):
         p=urlsplit(url)
-        return p.scheme=='https' and p.hostname in {'archive.org','commons.wikimedia.org','www.jamendo.com','jamendo.com','ccmixter.org'} and not p.username and p.port in (None,443)
+        return p.scheme=='https' and p.hostname in {'archive.org','commons.wikimedia.org','www.jamendo.com','jamendo.com','ccmixter.org','freesound.org','www.freesound.org','openverse.org'} and not p.username and p.port in (None,443)
     def _inspect(self):
         candidate=self.selected()
         if self.browser_worker or not candidate:return

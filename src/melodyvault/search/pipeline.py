@@ -89,6 +89,9 @@ class UnifiedMusicSearchService:
                 if not source_finished:
                     stats=summary();source_repo.job(run_id,query,'cancelled',stats['jobs'][0]);source_repo.finish(run_id,'cancelled',stats)
             music_events=[events[a.provider_id] for a in adapters]
+            candidates=[c for e in music_events for c in e.get('candidates',[])]
+            result.update(source_stats=stats, candidate_count=len(candidates), recording_id=target['recording_id'],
+                          provider_statuses={k:{key:value for key,value in v.items() if key!='candidates'} for k,v in events.items()})
             if not any(e['status']=='COMPLETED' for e in music_events):raise RuntimeError('没有成功查询的音乐来源；请检查配置及错误')
             check_cancel(self.cancel)
             settings=self.repository.settings()
@@ -97,9 +100,9 @@ class UnifiedMusicSearchService:
                 with connect(self.path) as db:
                     db.execute('INSERT INTO pipeline_source_attempts VALUES (?,?,?,?)',
                         (str(uuid4()),sid,encode(redact_payload(attempt)),utc_now()))
-            candidates=[c for e in music_events for c in e.get('candidates',[])]
             if not candidates and any(e['status']=='FAILED' for e in music_events):
-                raise RuntimeError('部分音乐来源查询失败；不能将失败记为无结果')
+                details='；'.join(f"{e['provider_id']}: {e.get('error','来源请求失败')}" for e in music_events if e['status']=='FAILED')
+                raise RuntimeError('部分音乐来源查询失败；不能将失败记为无结果。'+details)
             attempts=SourceFallbackManager(self.repository,self.manager,self.cancel,self.progress,record_attempt).run(target,candidates,settings)
             state=attempts[-1]['state'] if attempts else 'NO_SOURCE'
             result.update(status=state,attempts=attempts,source_stats=stats,

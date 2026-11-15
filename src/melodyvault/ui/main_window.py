@@ -64,6 +64,8 @@ class MainWindow(QMainWindow):
         self.pipeline_dry_run=QCheckBox('下载演练（不保存音频）');pipeline_options.addWidget(self.pipeline_dry_run)
         self.pipeline_selected_button=QPushButton('对已选歌曲搜索并下载');self.pipeline_selected_button.setEnabled(False);pipeline_options.addWidget(self.pipeline_selected_button)
         self.pipeline_selected_button.clicked.connect(self.start_selected_pipeline)
+        self.open_downloads_button=QPushButton('打开下载文件夹');pipeline_options.addWidget(self.open_downloads_button)
+        self.open_downloads_button.clicked.connect(lambda:self.download_page._folder())
         self.clear_button=QPushButton('清空结果');pipeline_options.addWidget(self.clear_button);pipeline_options.addStretch(1);self.clear_button.clicked.connect(self.clear_results)
         self.youtube_results_button=QPushButton('查看 YouTube 结果');self.youtube_results_button.setEnabled(False)
         self.youtube_results_button.clicked.connect(self.show_youtube_results);pipeline_options.addWidget(self.youtube_results_button)
@@ -307,7 +309,7 @@ class MainWindow(QMainWindow):
                 if e['provider_id']=='youtube' and e['status']=='COMPLETED':
                     self._youtube_results=list(e.get('candidates',[]));self.youtube_results_button.setEnabled(bool(self._youtube_results))
                 self._platform_statuses[e['provider_id']]=e
-                names={'netease':'网易云','youtube':'YouTube','bilibili':'Bilibili','douyin':'抖音','commons':'Commons','archive':'Archive','ccmixter':'ccMixter','jamendo':'Jamendo'}
+                names={'netease':'网易云','youtube':'YouTube','bilibili':'Bilibili','douyin':'抖音','commons':'Commons','archive':'Archive','ccmixter':'ccMixter','jamendo':'Jamendo','openverse':'Openverse'}
                 labels={'RESTRICTED':'受限','NOT_CONFIGURED':'未配置','FAILED':'失败','COMPLETED':'已完成'}
                 self.platform_status_label.setText(' · '.join(f"{names.get(k,k)}：{labels.get(v['status'],v['status'])}" for k,v in self._platform_statuses.items()))
                 self.platform_status_label.setToolTip('\n'.join(f"{names.get(k,k)}：{v.get('reason','')}" for k,v in self._platform_statuses.items()))
@@ -326,6 +328,10 @@ class MainWindow(QMainWindow):
             self.progress_bar.setRange(0,1);self.progress_bar.setValue(1);self.download_page.refresh();return
         last=result.get('attempts',[])
         reason=(last[-1].get('reason','') if last else '') or result.get('error','')
+        if result['status']=='COMPLETED' and last and last[-1].get('job_id'):
+            job=self.download_page.repository.get(last[-1]['job_id'])
+            path=job.get('result',{}).get('path','')
+            if path:reason=f'{reason} 本地文件：{path}'
         self.progress_label.setText(labels.get(result['status'],result['status'])+'。'+reason)
         self.progress_bar.setRange(0,1);self.progress_bar.setValue(1 if result['status']=='COMPLETED' else 0)
         self.download_page.refresh()

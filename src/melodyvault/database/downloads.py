@@ -60,6 +60,20 @@ class DownloadRepository:
         with connect(self.path) as db:db.execute('INSERT INTO download_attempts VALUES(?,?,?,?,?,?)',(str(uuid4()),jid,number,status,encode(details),utc_now()))
     def files(self,provider,external_id):
         with connect(self.path) as db:return [dict(r) for r in db.execute('SELECT * FROM downloaded_files WHERE provider=? AND external_id=?',(provider,external_id))]
+    def completed_files(self):
+        """Read verified archives for future upload, without changing upload state."""
+        with connect(self.path) as db:
+            rows=db.execute('SELECT * FROM downloaded_files ORDER BY verified_at,id').fetchall()
+        result=[]
+        for row in rows:
+            item=dict(row); evidence=json.loads(item['evidence_json']); media=json.loads(item['media_json'])
+            result.append({'song_id':evidence.get('song_id',''), 'recording_id':item['recording_id'],
+                'artist':evidence.get('artist_name',''), 'title':evidence.get('title',''),
+                'path':item['path'], 'format':media.get('format') or evidence.get('file_format',''),
+                'size':item['bytes'], 'sha256':item['sha256'], 'completed_at':item['verified_at'],
+                'provider':item['provider'], 'external_id':item['external_id'],
+                'source_url':evidence.get('source_page_url',''), 'status':'COMPLETED'})
+        return result
     def register_file(self,jid,candidate,path,verified,reused=False):
         result={**verified,'path':str(path),'reused':reused}
         with connect(self.path) as db:

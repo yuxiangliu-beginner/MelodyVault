@@ -67,12 +67,26 @@ def test_default_dry_run_never_requests_audio_or_creates_files(setup,audio):
     assert not Path(settings.directory).exists() and repo.summary()['COMPLETED']==0
 
 
+def test_openverse_index_is_not_download_authorization(setup):
+    _,_,target,raw,_,factory=setup
+    raw={**raw,'provider':'openverse','license_status':'LICENSE_UNVERIFIED'}
+    with factory() as http: result=DownloadEligibilityService(http).verify(raw,target)
+    assert not DownloadEligibilityService.allowed(result)
+    assert result.evidence['decision']=='LICENSE_UNVERIFIED'
+    assert 'Openverse' in result.verification_reason[0]
+
+
 def test_real_filesystem_atomic_validation_and_exact_source_dedup(setup,audio):
     opt_in(setup);repo,*_=setup;calls=[]
     m=manager(setup,lambda request:(calls.append(request),good(audio,request))[1]);first=queue(setup);m.run()
     row=repo.get(first);assert row['state']=='COMPLETED'
     result=row['result'];path=Path(result['path'])
     assert path.read_bytes()==audio and result['format']=='wav' and result['sha256']==hashlib.sha256(audio).hexdigest()
+    record=repo.completed_files()[0]
+    assert (record['song_id'],record['recording_id'],record['artist'],record['title'])==('unit-song','commons:7','Unit Test','Test tone')
+    assert record['path']==str(path) and path.is_absolute() and record['format']=='wav'
+    assert record['size']==len(audio) and record['sha256']==result['sha256'] and record['status']=='COMPLETED'
+    assert record['source_url']==PAGE and record['completed_at']
     assert Path(str(path)+'.evidence.json').exists() and not Path(row['part_path']).exists()
     second=queue(setup);assert second!=first;m.run();assert repo.get(second)['result']['reused'] and len(calls)==1
     # A different same-titled recording has a distinct task, not title deduplication.

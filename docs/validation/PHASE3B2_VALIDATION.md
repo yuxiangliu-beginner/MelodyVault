@@ -2,6 +2,15 @@
 
 2026-11-14。当前已实现歌曲选择后的来源搜索、文件级资格核验、限定任务队列和来源回退，但本阶段仍有未完成项，尚未整体验收。
 
+## 本轮中文搜索补充
+
+- 新增 [Openverse 官方音频搜索 API](https://docs.openverse.org/api/guides/quickstart.html)，以来源索引方式接入；搜索结果保留原始页面、匹配建议和 LICENSE_UNVERIFIED 原因，预览 URL 不作为完整音频下载。
+- 真实请求“林俊杰 江南”：2 次请求得到 4 条线索，其中 [《江南小镇》](https://www.jamendo.com/track/1000725) 的署名为 hctmg，并非目标歌曲或歌手；另有词语发音和新闻音频，不得当作目标录音。
+- Windows 原生 GUI 输入“周杰伦 晴天”，选择所展示的现场 Recording `4e7860ff-72d1-408b-8001-ca5558906942` 后，Openverse 真实返回 Dylan Tinlun Chan 的 [《晴天雨》](https://www.jamendo.com/track/751965)，与目标不同；状态 SKIPPED，实际下载 0。该测试是 dry-run，不能证明正式下载成功。最终机器记录 `.local/reports/phase3b2-chinese/native-delivery/native.json`。
+- 此前另一次 GUI 测试遇到 Openverse HTTP 500，完整有界重试后记录 FAILED；不能把该失败算成没有结果。记录 `.local/reports/phase3b2-chinese/native-openverse/native.json`。
+- 中文完整授权下载、真实故障后备用来源下载成功均尚未验证。旧英文授权下载记录可通过 `DownloadRepository.completed_files()` 读取 Phase 3C 所需字段；不实现 Drive 连接或上传。
+- 本轮定向与基础回归：**82 passed in 25.23s**，覆盖下载、来源、调度、GUI 和 Openverse；其中故障切换和音频测试包含模拟输入，不作为真实中文下载。根据本轮要求未重复执行 30 首覆盖或全量 pytest；此前的 213 项全量结果是上一轮代码的结果。
+
 ## 真实 A → B → C 控制
 
 输入 **Kevin MacLeod / Silent Night**；统一身份搜索从隔离 SQLite 得到 1 个候选，明确选择 MusicBrainz Recording `56c6eca2-5953-45d2-a7c2-54d6ab5833ef`。现有 Commons 来源查询得到 2 个候选，文件级资格验证通过后，DownloadManager 下载并验证原始 MP3，任务状态 COMPLETED，schema 9 保存会话、来源尝试和文件登记。实际新文件 **5,369,410 字节**，SHA-256 `4303f2a73ffd4e872503eb0898f62d7d0b9f1f15c783fcb3495e01c7383b6c00`；并发来源版 CLI 控制测试耗时 7.07 秒。此前测试副本中的已下载文件登记已清除，确保本次请求真实文件，不修改原 QA 库或正式库。

@@ -90,6 +90,8 @@ class DownloadEligibilityService:
             c.direct_download_url=item.get('audiodownload','');c.source_page_url=item.get('shareurl','');c.duration=item.get('duration');c.file_format='mp3'
             c.download_permission=c.personal_storage_permission=True;c.license_status='LICENSE_VERIFIED';source_title=item.get('name','');source_text=source_title
         else:
+            if c.provider=='openverse':
+                return reject('LICENSE_UNVERIFIED','Openverse 仅提供索引线索，未核验原始来源的完整录音与下载权利')
             return reject('LICENSE_UNVERIFIED','该来源尚无可核实的具体录音权利链；Archive上传者声明或Chrome页面不批准下载')
         if re.search(r'\b(preview|excerpt|sample|snippet)\b|试听|試聽|片段',source_title,re.I):return reject('PREVIEW_ONLY','候选标明试听或片段')
         kind=version_from_text(source_title+' '+str(raw.get('version','')))

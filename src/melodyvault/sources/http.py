@@ -10,7 +10,7 @@ from melodyvault.catalog.models import CatalogError
 from melodyvault import __version__
 
 UA=f'MelodyVault/{__version__} (+https://github.com/yuxiangliu-beginner/MelodyVault; Python desktop metadata client)'+(' '+os.environ['MELODYVAULT_AGENT_ID'] if os.environ.get('MELODYVAULT_AGENT_ID') else '')
-HOSTS={'archive.org','commons.wikimedia.org','api.jamendo.com','ccmixter.org'}
+HOSTS={'archive.org','commons.wikimedia.org','api.jamendo.com','ccmixter.org','api.openverse.org'}
 GATES={host:RateGate(1.1) for host in HOSTS}
 
 
