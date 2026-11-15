@@ -367,3 +367,14 @@ Phase0已验收，Phase1/2作为现有基线保留，用户已授权本轮Phase3
 A 已审计：schema10、2055 Recording、3 旧下载任务、68 来源；B 已实际请求12站，有限重试；C 无损控三次公开搜索 HTTP200，返回5/2/2篇文章，已核实正确录音0；D FMA《风中的呢喃》页面 CC BY4.0、4:55、非器乐、含AI披露，但实际音频未取得；E 正常下载两次均被登录条件阻止，0首中文音频下载成功，首次登录HTML已隔离改名，不算音乐；F 无两个合格同录音来源，真实换源 NOT_TESTED；G 无来源满足免登录与下载验收，不新增正式适配器。定向 pytest 67 passed in 91.02s（本地/模拟测试，非真实下载成功）。正式库全部表计数保持不变，integrity_check=ok。
 
 验收目标：至少一首完整、免登录、明确允许保存的中文人声通过文件及FFmpeg校验；**本轮未通过**。没有新音频文件，因此音频SHA-256和FFmpeg验证均NOT_TESTED。下一步优先寻找作者直接公开并明确允许自动保存的原创中文录音，或核实FMA无需账号的正常下载能力；不绕过登录，不将词曲信息等同文件。完整12站结果及逐阶段依据见 [TWELVE_MUSIC_SOURCES_VALIDATION.md](research/TWELVE_MUSIC_SOURCES_VALIDATION.md)。原始证据在 `.local/reports/twelve-sources-validation/`，不提交音频/HTML/数据库。Phase3B.4等待用户评审，不进入3C。
+
+
+## Phase 3B.5 — 中文原创下载与自动入库（2026-11-15，等待用户验收）
+
+验收标准：新中文人声录音、具体文件开放许可、免账号真实网络下载、完整解码、正式下载与个人音乐库流程、真实Qt界面及去重通过；正式数据保持完好。
+
+A 已审计起始76a002a、schema10、2055 Recording；B/C 通过Commons官方API和原作者作品表找到6个真实原创候选；D 《是你》CC BY-SA3.0原始Ogg真实下载820742字节、153.669659864秒，官方SHA-1/大小一致，SHA-256 e5f0040a89437667cb8c74428a8a6a9ae26814ebd17b215c59a2f167fc999d3c，FFmpeg全解码通过；E/F 复用Commons和DownloadManager，增加发布前可取消FFmpeg全解码、同事务自动登记personal_music、保留用户编辑与许可旁附、下载历史去重；G 最终真实网络Qt点击搜索1.146秒、下载/解码/入库5.355秒、重复点击3.121秒，通过，音乐库一条且一个音频文件；H 无两个合格同录音来源，真实换源NOT_TESTED，模拟故障回归通过；I 中文错误提示和新歌手组展开已验证。
+
+定向回归75 passed in107.15s；最终UI改动后6 passed in3.36s（属于重复执行，不累加为81个不同测试）。正式业务表计数和Recording内容摘要未变，schema10、integrity_check=ok。所有真实测试使用独立库，正式用户库无测试歌曲。完整报告：[PHASE_3B5_CHINESE_VOCAL_DOWNLOAD.md](research/PHASE_3B5_CHINESE_VOCAL_DOWNLOAD.md)。
+
+限制与失败：初次临时API脚本JSON解析失败，未计为无结果；部分最初候选是翻唱、器乐或现场短段，未作为验收歌曲；中文离线识别抽查置信度约0.004，不采用其结果判定语种。本轮中文演唱依据原作者公开作品表及华语作品说明，未声称人工听审。其他5首只完成候选/许可资料核实，未逐一下载；商业音乐下载和真实跨站换源未新增。下一步：用户验收后再逐曲扩大开放原创目录及人工听审，不进入Phase3C。

@@ -1,5 +1,6 @@
 """Music-store metadata first. Preview URLs are deliberately discarded."""
 from dataclasses import dataclass, asdict
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading, time
 import httpx
@@ -72,7 +73,11 @@ class CommonsMusicSearch:
             if not urlsplit(c.audio_url).path.lower().endswith(('.mp3','.flac','.wav','.ogg','.opus','.m4a','.aac')):continue
             desc=clean(c.evidence.get('extmetadata',{}).get('ImageDescription',{}).get('value',''))
             version=version_from_text(c.title+' '+desc)
-            out.append(PlatformSong('commons',c.external_id,c.title,c.performer or '未知歌手','',c.duration_seconds or 0,c.page_url,version))
+            # Explicit creator credits may be displayed with their role, but an
+            # uploader/photographer is never silently promoted to performer.
+            creator=re.search(r'创作\s*[:：]\s*([^\s，。；;<>]+)',desc)
+            credit=c.performer or (creator.group(1)+'（创作）' if creator else '未知歌手')
+            out.append(PlatformSong('commons',c.external_id,c.title,credit,'',c.duration_seconds or 0,c.page_url,version))
         return out
 
 class PlatformSearchService:
@@ -81,7 +86,7 @@ class PlatformSearchService:
     def search(self,query):
         if not query.strip():raise ValueError('请输入歌曲或歌手')
         repo=DiscoveryRepository(self.path); started=time.perf_counter()
-        key='platform-search-v2:tw:'+query.strip();cached=repo.cache(key,ttl=86400)
+        key='platform-search-v3:tw:'+query.strip();cached=repo.cache(key,ttl=86400)
         if cached is not None:
             check_cancel(self.cancel);return {**cached,'cached':True,'requests':0,'elapsed':time.perf_counter()-started}
         rows=[];statuses={k:{'status':'RESTRICTED','reason':'尚未核实适用于本应用的公开检索授权；未请求'} for k in ['wy','tx','kw','kg','mg','bilibili']}

@@ -8,7 +8,7 @@ from urllib.parse import urljoin
 import httpx
 from melodyvault.downloads.models import DownloadCandidate,DownloadSettings,DownloadError,Interrupted
 from melodyvault.downloads.security import audio_client,validate_url,redact_payload,resource_identity,strong_etag
-from melodyvault.downloads.files import contained,verify_file,publish,check_space,hashes
+from melodyvault.downloads.files import contained,verify_file,publish,check_space,hashes,decode_file
 from melodyvault.downloads.eligibility import DownloadEligibilityService
 from melodyvault.downloads.targets import search_values
 from melodyvault.catalog.models import CatalogCancelled
@@ -239,19 +239,23 @@ class DownloadManager:
                 if not candidate.checksums or not any(candidate.checksums.get(k)==existing.get(k) for k in ('sha1','sha256')):continue
                 path=Path(existing['path'])
                 if path.is_file():
-                    try:media=verify_file(path,candidate,settings.max_file_bytes)
+                    try:
+                        media=verify_file(path,candidate,settings.max_file_bytes)
+                        media.update(decode_file(path,control.check))
                     except DownloadError:continue
                     if not path.resolve().is_relative_to(Path(settings.directory).resolve()):
                         part=contained(settings.directory,'.parts',jid+'.part');part.parent.mkdir(parents=True,exist_ok=True)
                         row=self.repository.get(jid)
                         if part.exists() and row['part_path']!=str(part):raise DownloadError('FILE_CONFLICT','新目录的临时文件不属于本任务')
                         check_space(part.parent,media['bytes']);self.repository.update(jid,part_path=str(part),reason='复制已核实原始文件到新归档目录')
-                        shutil.copyfile(path,part);media=verify_file(part,candidate,settings.max_file_bytes);control.check()
+                        shutil.copyfile(path,part);media=verify_file(part,candidate,settings.max_file_bytes)
+                        media.update(decode_file(part,control.check));control.check()
                         path=publish(part,settings.directory,candidate,media);self._sidecar(path,candidate,media)
                     control.check();self.repository.register_file(jid,candidate,path,media,True);return
             part=self._download(jid,candidate,settings,control,bandwidth)
             control.check();self.repository.update(jid,state='VERIFYING',reason='正在核对SHA-256、官方校验值和实际媒体')
-            media=verify_file(part,candidate,settings.max_file_bytes);control.check()
+            media=verify_file(part,candidate,settings.max_file_bytes)
+            media.update(decode_file(part,control.check));control.check()
             final=publish(part,settings.directory,candidate,media)
             self._sidecar(final,candidate,media)
             self.repository.register_file(jid,candidate,final,media)

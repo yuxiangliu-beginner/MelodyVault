@@ -71,6 +71,38 @@ def check_space(directory,remaining):
     if shutil.disk_usage(directory).free<remaining+16*1024*1024:raise DownloadError('DISK_FULL','剩余磁盘空间不足（含16MiB安全余量）')
 
 
+def decode_file(path,check=lambda:None,timeout=90):
+    """Decode every audio frame before publication; cancellable and bounded."""
+    import subprocess,time
+    executable=shutil.which('ffmpeg')
+    if not executable:
+        try:
+            from imageio_ffmpeg import get_ffmpeg_exe
+            executable=get_ffmpeg_exe()
+        except (ImportError,RuntimeError):pass
+    if not executable:raise DownloadError('DECODER_UNAVAILABLE','未找到 FFmpeg，无法完成音频完整性验证')
+    check();deadline=time.monotonic()+timeout
+    process=subprocess.Popen([executable,'-nostdin','-v','error','-xerror','-i',str(path),'-map','0:a:0','-f','null','-'],
+        stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+    try:
+        while True:
+            check()
+            if time.monotonic()>deadline:raise DownloadError('MEDIA_DECODE_TIMEOUT','音频完整解码超时，请稍后重试')
+            try:
+                _,errors=process.communicate(timeout=.1)
+                break
+            except subprocess.TimeoutExpired:continue
+        check()
+        if process.returncode:
+            import logging
+            logging.getLogger(__name__).warning('FFmpeg validation failed: %s',errors.decode('utf-8','replace')[:2000])
+            raise DownloadError('MEDIA_DECODE_FAILED','音频无法完整解码，未发布到音乐库')
+        return {'decoder':'ffmpeg','full_decode':True}
+    finally:
+        if process.poll() is None:process.kill()
+        process.communicate()
+
+
 def publish(part,root,candidate,verified):
     from melodyvault.catalog.normalize import display_name
     artist=safe_component(display_name(candidate.artist_name) if candidate.artist_name.strip() else '未知歌手')

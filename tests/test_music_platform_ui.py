@@ -65,3 +65,14 @@ def test_cancelled_download_is_not_displayed_as_unavailable(tmp_path):
         w.download_done({'attempts':[{'state':'CANCELLED'}],'errors':{},'candidates':[]})
         assert w.active_download_button.text()=='重试' and w.status.text()=='任务已取消。'
     finally:w.close();app.processEvents()
+
+
+def test_new_download_group_is_visible_and_user_collapse_is_preserved(tmp_path):
+    app=QApplication.instance() or QApplication([]);path=tmp_path/'db.sqlite3';initialize_database(path);w=MusicWindow(path)
+    try:
+        with connect(path) as db:db.execute('insert into personal_music values(?,?,?,?,?,?,?,?,?,?,?)',
+            ('new','新歌','新歌手','',150,'ogg',str(tmp_path/'song.ogg'),100,'b'*64,'download','now'))
+        w.refresh_history();group=w.history.topLevelItem(0)
+        assert group.isExpanded() and group.child(0).text(0)=='新歌'
+        group.setExpanded(False);w.refresh_history();assert not w.history.topLevelItem(0).isExpanded()
+    finally:w.close();app.processEvents()

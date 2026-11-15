@@ -14,6 +14,21 @@ from melodyvault.catalog.normalize import display_name
 
 FORMATS={'.mp3':'mp3','.flac':'flac','.m4a':'m4a','.wav':'wav'}
 
+
+def register_download(db,candidate,path,verified):
+    """Index an already verified archive in-place, in the caller's transaction.
+
+    Supports the download manager's original formats (including Ogg/Opus).
+    User edits are never replaced on SHA-256 hits. No second copy is made.
+    """
+    existing=db.execute('SELECT id FROM personal_music WHERE sha256=?',(verified['sha256'],)).fetchone()
+    if existing:return existing[0]
+    key=str(uuid4())
+    db.execute('INSERT INTO personal_music VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+        (key,candidate.title,display_name(candidate.artist_name) or '未知歌手','',verified['duration'],
+         verified['format'],str(path),verified['bytes'],verified['sha256'],'download',utc_now()))
+    return key
+
 def _wav_info(path):
     """Read bounded RIFF INFO fields that Mutagen does not expose as ID3 tags."""
     tags={}

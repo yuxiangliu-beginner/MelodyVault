@@ -147,3 +147,10 @@ Google Drive 仅用 drive.file，文件夹必须是应用创建或用户通过�
 本阶段交付源码和可运行开发环境，已实现真实目录/来源元数据网络任务及独立Chrome。PyInstaller独立exe、干净系统和Win10/Win11矩阵、OAuth、音频传输与上传恢复仍属于后续阶段；用户本轮明确Phase5再扩展传输/恢复，当前不提前实施。每阶段需真实测试，等待用户确认再推进。
 
 参考官方资料：[Qt for Python](https://doc.qt.io/qtforpython-6/gettingstarted.html)、[pyproject.toml](https://packaging.python.org/en/latest/guides/writing-pyproject-toml/)、[Drive OAuth scopes](https://developers.google.com/workspace/drive/api/guides/api-specific-auth)。
+
+
+## Phase 3B.5 下载到个人音乐库
+
+Commons公开文件发现继续使用现有PlatformSearchService/CommonsProvider；下载资格与录音身份仍由DownloadEligibilityService复核。DownloadManager临时下载→官方哈希/大小/媒体检查→可取消且有时限的FFmpeg全解码→原子发布与许可旁附→DownloadRepository.register_file。同一SQLite事务内调用library.imports.register_download登记已核验文件至personal_music，不复制音频、不新增schema、不改写已有SHA-256命中的用户元数据。转换流程通过source_type与普通下载分开，原有手动转换入库方式不变。
+
+界面继续显示三页和歌曲/歌手/时长/操作四列；读取personal_music后抑制同路径重复下载历史行。上传者不等于歌手，描述中仅有明确创作署名时保留创作角色。

@@ -151,36 +151,45 @@ class MusicWindow(QMainWindow):
         completed=next((a for a in r['attempts'] if a['state']=='COMPLETED'),None)
         if completed:
             if self.active_download_button:self.active_download_button.setText('已完成')
-            path=self.repo.get(completed['job_id'])['result']['path'];self.status.setText('下载完成：'+path)
+            result=self.repo.get(completed['job_id'])['result'];path=result['path']
+            self.status.setText(('下载成功，已添加到我的音乐：' if result.get('library_id') else '下载完成：')+path)
             with connect(self.path) as db:flag=db.execute("SELECT value FROM app_metadata WHERE key='ui.auto_open'").fetchone()
             if flag and flag[0]=='true':QDesktopServices.openUrl(QUrl.fromLocalFile(str(Path(path).parent)))
         else:
             if self.active_download_button:self.active_download_button.setText('重试' if r['errors'] or any(a['state']=='FAILED' for a in r['attempts']) else '不可下载')
-            self.status.setText('暂时没有可下载的音源。'+(' 部分来源查询失败，可稍后重试。' if r['errors'] else ''))
+            codes={'MEDIA_DECODE_FAILED':'音频无法完整解码，未加入音乐库。','MEDIA_DECODE_TIMEOUT':'音频验证超时，请稍后重试。',
+                   'DECODER_UNAVAILABLE':'未找到 FFmpeg，无法完成音频验证。','HASH_MISMATCH':'文件校验失败，未加入音乐库。',
+                   'INCOMPLETE_AUDIO':'下载文件不完整，未加入音乐库。','DOWNLOAD_NOT_PERMITTED':'该来源不允许当前下载方式，已跳过。',
+                   'LICENSE_UNVERIFIED':'下载许可尚未确认，已跳过该来源。'}
+            reason=codes.get(r['attempts'][-1].get('reason_code')) if r['attempts'] else None
+            self.status.setText(reason or '暂时没有可下载的音源。'+(' 部分来源查询失败，可稍后重试。' if r['errors'] else ''))
             self.status.setToolTip('\n'.join(c['page_url']+' · '+c.get('license_reason','') for c in r['candidates']))
     def refresh_history(self):
         selected=self.history.currentItem();key=selected.data(0,Qt.ItemDataRole.UserRole) if selected else None
         expanded={self.history.topLevelItem(i).text(0) for i in range(self.history.topLevelItemCount()) if self.history.topLevelItem(i).isExpanded()}
+        previous_groups={self.history.topLevelItem(i).text(0) for i in range(self.history.topLevelItemCount())}
         with connect(self.path) as db:
             rows=db.execute('SELECT id,state,target_json,result_json,candidate_json,bytes_received,total_bytes,reason FROM download_jobs ORDER BY created_at DESC').fetchall()
             imported=db.execute('SELECT * FROM personal_music ORDER BY created_at DESC').fetchall()
         self.history.clear();groups={};q=self.filter.text().casefold()
+        library_paths={r['path'] for r in imported}
         labels={'COMPLETED':'已完成','FAILED':'下载失败','SKIPPED':'未找到可下载文件','CANCELLED':'已取消','PAUSED':'已暂停','QUEUED':'等待中','READY':'等待开始','DOWNLOADING':'下载中','SEARCHING':'查找中','VERIFYING':'检查中'}
         for r in imported:
             artist=r['artist'] or '未知歌手';title=r['title'];path=r['path']
             if q and q not in (artist+' '+title).casefold():continue
             if artist not in groups:
-                groups[artist]=QTreeWidgetItem(self.history,[artist]);groups[artist].setExpanded(artist in expanded or not getattr(self,'_history_initialized',False))
+                groups[artist]=QTreeWidgetItem(self.history,[artist]);groups[artist].setExpanded(artist in expanded or artist not in previous_groups)
             item=QTreeWidgetItem(groups[artist],[title,r['format'],'已完成' if Path(path).is_file() else '文件不存在',path]);item.setData(0,Qt.ItemDataRole.UserRole,{'library_path':path});item.setToolTip(0,path)
             if key=={'library_path':path}:self.history.setCurrentItem(item)
         for r in rows:
             t=json.loads(r['target_json']);out=json.loads(r['result_json']);c=json.loads(r['candidate_json']);artist=t.get('artist',{}).get('name') or '未知歌手';title=t.get('title','')
+            if r['state']=='COMPLETED' and out.get('path') in library_paths:continue
             if t.get('namespace')=='local_video' and r['state']=='COMPLETED':continue
             if t.get('namespace')=='local_import' and r['state'] in {'COMPLETED','SKIPPED'}:continue
             if q and q not in (artist+' '+title).casefold():continue
             group=artist if r['state']=='COMPLETED' else '未完成任务'
             if group not in groups:
-                groups[group]=QTreeWidgetItem(self.history,[group]);groups[group].setExpanded(group in expanded or not getattr(self,'_history_initialized',False))
+                groups[group]=QTreeWidgetItem(self.history,[group]);groups[group].setExpanded(group in expanded or group not in previous_groups)
             state=labels.get(r['state'],'处理中');p=out.get('path','')
             if r['state']=='COMPLETED' and not Path(p).is_file():state='文件不存在'
             if r['total_bytes'] and r['state']!='COMPLETED':state+=f" {100*r['bytes_received']/r['total_bytes']:.0f}%"
