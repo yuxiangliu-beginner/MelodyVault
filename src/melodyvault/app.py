@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         from PySide6.QtCore import QTimer
         from PySide6.QtWidgets import QApplication
-        from melodyvault.ui.main_window import MainWindow
+        from melodyvault.ui.music_window import MusicWindow as MainWindow
         application = QApplication([sys.argv[0]])
         application.setApplicationName("MelodyVault")
         application.setApplicationVersion(__version__)

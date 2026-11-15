@@ -72,10 +72,12 @@ def check_space(directory,remaining):
 
 
 def publish(part,root,candidate,verified):
-    target=contained(root,safe_component(candidate.artist_name),safe_component(candidate.title))
+    from melodyvault.catalog.normalize import display_name
+    artist=safe_component(display_name(candidate.artist_name) if candidate.artist_name.strip() else '未知歌手')
+    target=contained(root,artist)
     target.mkdir(parents=True,exist_ok=True)
-    rid=hashlib.sha256(candidate.recording_id.encode()).hexdigest()[:10]
-    final=contained(root,str(target.relative_to(Path(root).resolve())),f'{safe_component(candidate.title)[:45]} [{safe_component(candidate.version)}] {rid}-{verified["sha256"][:12]}.{verified["format"]}')
+    basename=f'{artist} - {safe_component(candidate.title)}'
+    final=contained(root,artist,f'{basename}.{verified["format"]}')
     if final.exists():
         if final.is_file() and hashes(final)['sha256']==verified['sha256']:return final
         raise DownloadError('FILE_CONFLICT','目标文件名已被不同内容占用，未覆盖')

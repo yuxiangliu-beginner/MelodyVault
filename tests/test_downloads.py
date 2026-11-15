@@ -81,6 +81,7 @@ def test_real_filesystem_atomic_validation_and_exact_source_dedup(setup,audio):
     m=manager(setup,lambda request:(calls.append(request),good(audio,request))[1]);first=queue(setup);m.run()
     row=repo.get(first);assert row['state']=='COMPLETED'
     result=row['result'];path=Path(result['path'])
+    assert path.parent.name=='Unit Test' and path.name=='Unit Test - Test tone.wav'
     assert path.read_bytes()==audio and result['format']=='wav' and result['sha256']==hashlib.sha256(audio).hexdigest()
     record=repo.completed_files()[0]
     assert (record['song_id'],record['recording_id'],record['artist'],record['title'])==('unit-song','commons:7','Unit Test','Test tone')

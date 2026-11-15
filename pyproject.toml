@@ -15,6 +15,7 @@ test = ["pytest>=8,<10"]
 browser = ["playwright>=1.49,<2"]
 cloud = ["google-api-python-client>=2.150,<3", "google-auth-oauthlib>=1.2,<2"]
 audio = ["mutagen>=1.47,<2"]
+media = ["imageio-ffmpeg>=0.6,<0.8"]
 packaging = ["pyinstaller>=6.11,<7"]
 
 [project.scripts]
