@@ -360,3 +360,10 @@ Phase0已验收，Phase1/2作为现有基线保留，用户已授权本轮Phase3
 开发测试：原下载/来源/UI 定向回归 69 passed；新增调查测试初次 5 failed（SQL 占位符数量和测试 IDNA 预期值），已修复，20 passed。不是最终验收结果。
 
 阻塞/限制：无全网搜索 API / Jamendo client_id；公开目录外链不等同全网覆盖；ccMixter 中文翻唱和传统歌曲权利链未核实则拒绝下载。下一步：30 首真实网络测试、原生 GUI、完整回归、数据保留核对及真实授权音频验证；最终结果见本阶段验证文档。
+
+
+## Phase 3B.4 — 12 来源专项验证（2026-11-15）
+
+A 已审计：schema10、2055 Recording、3 旧下载任务、68 来源；B 已实际请求12站，有限重试；C 无损控三次公开搜索 HTTP200，返回5/2/2篇文章，已核实正确录音0；D FMA《风中的呢喃》页面 CC BY4.0、4:55、非器乐、含AI披露，但实际音频未取得；E 正常下载两次均被登录条件阻止，0首中文音频下载成功，首次登录HTML已隔离改名，不算音乐；F 无两个合格同录音来源，真实换源 NOT_TESTED；G 无来源满足免登录与下载验收，不新增正式适配器。定向 pytest 67 passed in 91.02s（本地/模拟测试，非真实下载成功）。正式库全部表计数保持不变，integrity_check=ok。
+
+验收目标：至少一首完整、免登录、明确允许保存的中文人声通过文件及FFmpeg校验；**本轮未通过**。没有新音频文件，因此音频SHA-256和FFmpeg验证均NOT_TESTED。下一步优先寻找作者直接公开并明确允许自动保存的原创中文录音，或核实FMA无需账号的正常下载能力；不绕过登录，不将词曲信息等同文件。完整12站结果及逐阶段依据见 [TWELVE_MUSIC_SOURCES_VALIDATION.md](research/TWELVE_MUSIC_SOURCES_VALIDATION.md)。原始证据在 `.local/reports/twelve-sources-validation/`，不提交音频/HTML/数据库。Phase3B.4等待用户评审，不进入3C。
