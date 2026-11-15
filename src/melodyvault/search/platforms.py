@@ -7,6 +7,10 @@ from melodyvault.catalog.musicbrainz import RateGate, check_cancel
 from melodyvault.catalog.normalize import search_names, title_key, name_key
 from melodyvault.sources.matching import version_from_text
 from melodyvault.database.discovery import DiscoveryRepository
+from melodyvault.providers.commons import CommonsProvider
+from melodyvault.sources.http import SourceHTTP
+from melodyvault.providers.commons import clean
+from urllib.parse import urlsplit
 
 APPLE_GATE=RateGate(3.2)  # official approximate 20 requests/minute
 
@@ -53,13 +57,31 @@ class AppleMusicSearch:
                     if self.cancel.wait(delay):check_cancel(self.cancel)
         raise RuntimeError('Apple 音乐搜索未完成：'+last)
 
+class CommonsMusicSearch:
+    """Discovery of individual official files; a selected file is its own identity."""
+    name='commons'
+    def __init__(self,cancel=None):self.cancel=cancel or threading.Event();self.requests=0
+    def search(self,query):
+        # The file search uses the official MediaWiki API, with the same rate gate.
+        with SourceHTTP(self.cancel) as http:
+            data=http.json('https://commons.wikimedia.org/w/api.php',{'action':'query','format':'json','formatversion':2,'generator':'search','gsrsearch':query+' filetype:audio','gsrnamespace':6,'gsrlimit':20,'prop':'imageinfo','iiprop':'url|mime|mediatype|size|extmetadata|metadata','iiextmetadatalanguage':'en','maxlag':5})
+            self.requests=http.requests
+        if data.get('error'):raise RuntimeError('Commons 搜索失败：'+str(data['error'].get('code','unknown')))
+        out=[]
+        for c in CommonsProvider().parse(data):
+            if not urlsplit(c.audio_url).path.lower().endswith(('.mp3','.flac','.wav','.ogg','.opus','.m4a','.aac')):continue
+            desc=clean(c.evidence.get('extmetadata',{}).get('ImageDescription',{}).get('value',''))
+            version=version_from_text(c.title+' '+desc)
+            out.append(PlatformSong('commons',c.external_id,c.title,c.performer or '未知歌手','',c.duration_seconds or 0,c.page_url,version))
+        return out
+
 class PlatformSearchService:
     def __init__(self,path,cancel=None,providers=None):
-        self.path=path;self.cancel=cancel or threading.Event();self.providers=providers or [AppleMusicSearch(self.cancel)]
+        self.path=path;self.cancel=cancel or threading.Event();self.providers=providers or [AppleMusicSearch(self.cancel),CommonsMusicSearch(self.cancel)]
     def search(self,query):
         if not query.strip():raise ValueError('请输入歌曲或歌手')
         repo=DiscoveryRepository(self.path); started=time.perf_counter()
-        key='platform-search-v1:tw:'+query.strip();cached=repo.cache(key,ttl=86400)
+        key='platform-search-v2:tw:'+query.strip();cached=repo.cache(key,ttl=86400)
         if cached is not None:
             check_cancel(self.cancel);return {**cached,'cached':True,'requests':0,'elapsed':time.perf_counter()-started}
         rows=[];statuses={k:{'status':'RESTRICTED','reason':'尚未核实适用于本应用的公开检索授权；未请求'} for k in ['wy','tx','kw','kg','mg','bilibili']}
@@ -76,5 +98,5 @@ class PlatformSearchService:
         # Exact platform IDs only. Similar titles/durations do not establish recording identity.
         rows=list({(r.source,r.song_id):r for r in rows}.values());rows.sort(key=lambda r:-r.score)
         result={'rows':[asdict(r) for r in rows],'statuses':statuses,'requests':sum(p.requests for p in self.providers),'cached':False,'elapsed':time.perf_counter()-started}
-        if any(s['status']=='COMPLETED' for s in statuses.values()):repo.cache(key,result)
+        if all(statuses[p.name]['status']=='COMPLETED' for p in self.providers):repo.cache(key,result)
         return result

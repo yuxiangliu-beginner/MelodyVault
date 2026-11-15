@@ -103,6 +103,10 @@ MIGRATIONS = (
         "CREATE TABLE pipeline_source_attempts (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES pipeline_sessions(id), payload_json TEXT NOT NULL, created_at TEXT NOT NULL)",
         "CREATE INDEX pipeline_attempts_session ON pipeline_source_attempts(session_id,created_at)",
     )),
+    Migration(10, "personal_music_library", (
+        "CREATE TABLE personal_music (id TEXT PRIMARY KEY, title TEXT NOT NULL, artist TEXT NOT NULL, album TEXT NOT NULL DEFAULT '', duration REAL, format TEXT NOT NULL, path TEXT NOT NULL UNIQUE, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, source_type TEXT NOT NULL, created_at TEXT NOT NULL)",
+        "CREATE INDEX personal_music_sha256 ON personal_music(sha256)",
+    )),
 )
 
 

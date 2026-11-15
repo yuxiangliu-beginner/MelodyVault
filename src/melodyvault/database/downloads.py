@@ -51,7 +51,7 @@ class DownloadRepository:
         with connect(self.path) as db:db.execute('UPDATE download_jobs SET '+','.join(k+'=?' for k in fields)+' WHERE id=?',(*fields.values(),jid))
     def recover(self):
         with connect(self.path) as db:
-            db.execute("UPDATE download_jobs SET state='PAUSED',speed=0,eta=NULL,reason_code='RESTART_RECOVERY',reason='上次任务未结束，等待用户继续；续传前重新核验来源和对象',updated_at=? WHERE state IN ('SEARCHING','VERIFYING','DOWNLOADING')",(utc_now(),))
+            db.execute("UPDATE download_jobs SET state='PAUSED',speed=0,eta=NULL,reason_code='RESTART_RECOVERY',reason='上次任务未结束，等待用户继续；续传前重新核验来源和对象',updated_at=? WHERE state IN ('SEARCHING','VERIFYING','DOWNLOADING') AND COALESCE(json_extract(target_json,'$.namespace'),'')!='local_import'",(utc_now(),))
     def evidence(self,jid,step,decision,payload):
         with connect(self.path) as db:db.execute('INSERT INTO download_evidence VALUES(?,?,?,?,?,?)',(str(uuid4()),jid,step,decision,encode(redact_payload(payload)),utc_now()))
     def evidence_rows(self,jid):

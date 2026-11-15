@@ -18,7 +18,7 @@ class DownloadEligibilityService:
     def __init__(self,http,mb_client=None):self.http=http;self.mb_client=mb_client
     def verify(self,raw,target):
         c=DownloadCandidate(target['song_id'],target['recording_id'],target['artist']['name'],target['title'],target['version'],raw['provider'],raw.get('page_url',''),external_id=raw['external_id'])
-        c.evidence={'source_candidate':raw,'target':target};c.verified_at=utc_now()
+        c.evidence={'source_candidate':raw,'target':target,'source_type':'download'};c.verified_at=utc_now()
         def reject(code,reason):
             c.verification_reason.append(reason);c.evidence['decision']=code
             if code=='VERSION_MISMATCH':c.metadata_match_status=code
