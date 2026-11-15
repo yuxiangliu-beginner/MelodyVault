@@ -22,6 +22,9 @@ def test_simple_shell_and_history_keep_missing_and_failed(tmp_path):
     w=MusicWindow(path)
     try:
         assert [w.tabs.tabText(i) for i in range(w.tabs.count())]==['音乐搜索','下载记录','视频转 MP3']
+        assert [w.table.horizontalHeaderItem(i).text() for i in range(w.table.columnCount())]==['歌曲','歌手','时长','操作']
+        w.results({'rows':[{'title':'晴天','artist':'周杰伦','duration':0,'source_url':'https://music.apple.com/','source':'apple','song_id':'1','version':'unknown'}],'statuses':{'apple':{'status':'COMPLETED'}}})
+        assert w.table.item(0,2).text()=='--:--' and w.table.cellWidget(0,3).text()=='下载'
         assert w.history.topLevelItemCount()==2
         states=[w.history.topLevelItem(i).child(0).text(2) for i in range(2)]
         assert '文件不存在' in states and '下载失败' in states
