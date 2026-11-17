@@ -33,6 +33,8 @@ def validate_url(provider,url):
         if any(x in url for x in ('\r','\n','\\')) or any(x in unquote(p.path).split('/') for x in ('.','..')):raise ValueError()
         good=(provider=='commons' and host=='upload.wikimedia.org' and bool(re.fullmatch(r'/wikipedia/commons/[0-9a-f]/[0-9a-f]{2}/[^/]+',p.path)))
         good|=provider=='archive' and (host=='archive.org' or bool(re.fullmatch(r'ia\d+\.(?:us\.)?archive\.org',host))) and p.path.startswith('/download/')
+        # /download/ redirects to the storage node holding the item.
+        good|=provider=='archive' and bool(re.fullmatch(r'(?:ia|dn)\d+\.(?:[a-z]{2}\.)?archive\.org',host)) and bool(re.fullmatch(r'/\d+/items/[^/]+/.+',p.path))
         good|=provider=='jamendo' and bool(re.fullmatch(r'(?:prod-\d+\.)?storage\.jamendo\.com',host)) and p.path.startswith('/download/')
         good|=provider=='ccmixter' and host=='ccmixter.org' and bool(re.fullmatch(r'/content/[A-Za-z0-9_-]+/[^/]+\.(?:mp3|flac|wav|m4a|aac|ogg|opus)',p.path,re.I)) and not p.query
         if not good:raise ValueError()

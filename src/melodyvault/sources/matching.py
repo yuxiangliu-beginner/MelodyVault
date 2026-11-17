@@ -12,6 +12,19 @@ def version_from_text(text):
     return 'unknown'
 
 
+def core_title(title,artist=''):
+    """The song name inside an upload title: "周杰倫 - 退後 [192kHz]" -> "退后".
+
+    Removes bracketed notes, the artist's name and leftover separators. Display
+    text (simplified Chinese); compare with title_key().
+    """
+    from melodyvault.catalog.normalize import display_name
+    text=re.sub(r'[\[(（【][^\])）】]*[\])）】]',' ',display_name(title or ''))
+    for name in {display_name(n) for n in re.split(r'\s*/\s*',artist or '') if n.strip()}:text=text.replace(name,' ')
+    text=re.sub(r'\s+',' ',re.sub(r'(?:^|\s)[-–—_:：|·]+(?=\s|$)',' ',text)).strip(' -–—_:：|·')
+    return text or display_name(title or '').strip()
+
+
 def match_candidate(query,candidate):
     exact=title_key(candidate.title) in {title_key(t) for t in query.titles}
     artist_match=name_key(candidate.performer) in {name_key(a) for a in query.artist_names} if candidate.performer else False

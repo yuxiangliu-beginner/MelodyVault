@@ -3,6 +3,7 @@ import time
 from dataclasses import replace
 from melodyvault.search.orchestrator import UnifiedCandidate
 from melodyvault.downloads.fallback import SourceFallbackManager
+from melodyvault.database import connect
 from test_downloads import setup,audio,manager,queue,good,opt_in
 
 
@@ -18,6 +19,8 @@ def test_selected_run_leaves_other_queued_jobs_untouched(setup,audio):
 
 def test_fallback_ignores_known_wrong_version_and_never_downloads_unauthorized(setup,audio):
     settings=opt_in(setup);repo,_,target,raw,*_=setup
+    # Strict mode is the user's opt-in "只下载许可已核验的文件" setting.
+    with connect(repo.path) as db:db.execute("INSERT OR REPLACE INTO app_metadata(key,value) VALUES ('ui.require_license','true')")
     calls=[];m=manager(setup,lambda req:(calls.append(req),good(audio,req))[1])
     wrong=dict(raw,external_id='wrong',match_status='VERSION_MISMATCH')
     unknown=dict(raw,provider='archive',external_id='archive/1',match_status='REVIEW_REQUIRED')

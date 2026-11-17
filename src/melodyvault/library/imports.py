@@ -24,8 +24,9 @@ def register_download(db,candidate,path,verified):
     existing=db.execute('SELECT id FROM personal_music WHERE sha256=?',(verified['sha256'],)).fetchone()
     if existing:return existing[0]
     key=str(uuid4())
+    album=candidate.evidence.get('album','')
     db.execute('INSERT INTO personal_music VALUES(?,?,?,?,?,?,?,?,?,?,?)',
-        (key,candidate.title,display_name(candidate.artist_name) or '未知歌手','',verified['duration'],
+        (key,candidate.title,display_name(candidate.artist_name) or '未知歌手',album if isinstance(album,str) else '',verified['duration'],
          verified['format'],str(path),verified['bytes'],verified['sha256'],'download',utc_now()))
     return key
 

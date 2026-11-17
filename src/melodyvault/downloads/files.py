@@ -43,6 +43,11 @@ def verify_file(path,candidate,max_bytes):
         if name in digests and expected and expected.lower()!=digests[name]:raise DownloadError('HASH_MISMATCH',f'{name.upper()}与官方文件校验值不符')
     try:
         media=mutagen.File(path)
+        # Content sniffing misses valid streams after leading padding (e.g. zero
+        # bytes before the first MP3 frame). Retry with the declared format's own
+        # parser; the full FFmpeg decode afterwards still has to pass.
+        explicit={'mp3':MP3,'flac':FLAC,'wav':WAVE,'ogg':OggVorbis,'opus':OggOpus,'m4a':MP4,'aac':AAC}.get(candidate.file_format)
+        if media is None and explicit:media=explicit(path)
         kind=next((v for t,v in ((MP3,'mp3'),(FLAC,'flac'),(WAVE,'wav'),(OggVorbis,'ogg'),(OggOpus,'opus'),(MP4,'m4a'),(AAC,'aac')) if isinstance(media,t)),None)
         if not kind or not media.info or not 0<media.info.length<24*3600:raise ValueError()
         if kind=='m4a' and not str(media.info.codec).startswith(('mp4a','alac')):raise ValueError()
@@ -109,13 +114,17 @@ def publish(part,root,candidate,verified):
     target=contained(root,artist)
     target.mkdir(parents=True,exist_ok=True)
     basename=f'{artist} - {safe_component(candidate.title)}'
-    final=contained(root,artist,f'{basename}.{verified["format"]}')
-    if final.exists():
-        if final.is_file() and hashes(final)['sha256']==verified['sha256']:return final
-        raise DownloadError('FILE_CONFLICT','目标文件名已被不同内容占用，未覆盖')
-    # Both paths are on the same volume. Windows rename fails if destination exists.
-    try:
-        if os.name=='nt':os.rename(part,final)
-        else:os.link(part,final);Path(part).unlink()
-    except FileExistsError:raise DownloadError('FILE_CONFLICT','另一任务已创建目标文件，未覆盖') from None
-    return final
+    # Another recording may already use this display name (two uploads of the same
+    # song). Keep both as "name (2)", ...; an identical file is reused; nothing is overwritten.
+    for number in range(1,100):
+        final=contained(root,artist,f'{basename}.{verified["format"]}' if number==1 else f'{basename} ({number}).{verified["format"]}')
+        if final.exists():
+            if final.is_file() and hashes(final)['sha256']==verified['sha256']:return final
+            continue
+        # Both paths are on the same volume. Windows rename fails if destination exists.
+        try:
+            if os.name=='nt':os.rename(part,final)
+            else:os.link(part,final);Path(part).unlink()
+        except FileExistsError:continue
+        return final
+    raise DownloadError('FILE_CONFLICT','同名文件过多，未覆盖任何已有文件')
