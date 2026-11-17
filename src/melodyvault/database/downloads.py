@@ -79,7 +79,7 @@ class DownloadRepository:
         with connect(self.path) as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute('INSERT INTO downloaded_files VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(fingerprint,sha256) DO UPDATE SET path=excluded.path,media_json=excluded.media_json,evidence_json=excluded.evidence_json,verified_at=excluded.verified_at',(str(uuid4()),candidate.provider,candidate.external_id,candidate.recording_id,candidate.fingerprint,str(path),verified['sha256'],verified['sha1'],verified['bytes'],encode(verified),encode(redact_payload(candidate.to_dict())),utc_now()))
-            if candidate.provider in {'commons','ccmixter','jamendo'} and candidate.evidence.get('source_type','download')=='download':
+            if candidate.provider in {'commons','ccmixter','jamendo','archive'} and candidate.evidence.get('source_type','download')=='download':
                 from melodyvault.library.imports import register_download
                 result['library_id']=register_download(db,candidate,path,verified)
             db.execute("UPDATE download_jobs SET state='COMPLETED',reason_code='',reason='文件已验证并安全归档',bytes_received=?,total_bytes=?,speed=0,eta=NULL,result_json=?,updated_at=? WHERE id=?",(verified['bytes'],verified['bytes'],encode(result),utc_now(),jid));db.commit()

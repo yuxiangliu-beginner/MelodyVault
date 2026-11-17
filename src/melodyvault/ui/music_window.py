@@ -28,8 +28,13 @@ class MusicTask(QThread):
             from melodyvault.database.sources import SourceRepository
             from melodyvault.downloads.fallback import SourceFallbackManager
             from melodyvault.search.orchestrator import UnifiedCandidate
+            from melodyvault.sources.matching import core_title
             s=self.song;artist=SimpleNamespace(mbid=s['source']+':'+s['artist'],name=s['artist'])
-            q=SourceQuery(artist.mbid,s['source']+':'+s['song_id'],s['artist'],s['title'],[s['artist']],[s['title']],
+            # Backup sources are searched by the bare song name ("周杰倫 - 退後 [192kHz]" -> "退后")
+            # and by each credited artist, not by the upload's decorated title.
+            titles=list(dict.fromkeys([core_title(s['title'],s['artist']),s['title']]))
+            artists=[a for a in dict.fromkeys(a.strip() for a in s['artist'].split('/')) if a and a!='未知歌手'] or [s['artist']]
+            q=SourceQuery(artist.mbid,s['source']+':'+s['song_id'],s['artist'],s['title'],artists,titles,
                           [s['version']], [int(s['duration']*1000)] if s['duration'] else [],[])
             self.notice.emit('正在查找可下载音源…')
             repo=DownloadRepository(self.path);settings=replace(repo.settings(),automatic_download=True)
@@ -38,33 +43,44 @@ class MusicTask(QThread):
             target={'song_id':q.song_id,'recording_id':s['source']+':'+s['song_id'],'namespace':s['source'],
                 'artist':{'id':artist.mbid,'name':s['artist']},'title':s['title'],'version':s['version'],
                 'duration':s['duration'],'confirmed':True,'urls':[s['source_url']],'work_ids':[]}
-            if s['source']=='commons':target.update(namespace='commons',recording_id='commons:'+s['song_id'],source_page_url=s['source_url'])
+            native=s['source'] in {'commons','archive'}
+            # equivalent_sources: with 自动换源 on, another upload with the same song name,
+            # artist and length (±2 s) may replace a failed one (see DownloadEligibilityService).
+            if native:target.update(namespace=s['source'],recording_id=s['source']+':'+s['song_id'],source_page_url=s['source_url'],equivalent_sources=fallback_enabled)
             from melodyvault.search.recording_bridge import linked_recording
             linked=linked_recording(self.path,s)
             if linked:target.update(linked)
             def progress(e):
                 self.notice.emit('下载中：'+str(e.get('bytes_received',0))+' 字节' if e['stage']=='download_progress' else '正在检查可下载音源…')
-            self.manager=DownloadManager(repo)
             import logging
+            try:
+                # Approvals lapse after 7 days; renew them instead of silently skipping every source.
+                from melodyvault.discovery.service import refresh_stale_builtins
+                refresh_stale_builtins(self.path,{'commons','archive'},self.cancel_event)
+            except CatalogCancelled:raise
+            except Exception:logging.getLogger(__name__).warning('source approval refresh failed',exc_info=True)
+            self.manager=DownloadManager(repo)
             runner=SourceFallbackManager(repo,self.manager,self.cancel_event,progress,lambda e:logging.getLogger(__name__).info('source attempt %s: %s %s',e.get('source'),e.get('state'),e.get('reason_code','')))
             attempts=[];errors={}
-            if s['source']=='commons':
+            if native:
                 from dataclasses import asdict
                 from melodyvault.providers.commons import CommonsProvider
+                from melodyvault.providers.archive import ArchiveProvider
                 from melodyvault.sources.http import SourceHTTP
                 from melodyvault.sources.matching import match_candidate
                 try:
                     with SourceHTTP(self.cancel_event) as http:
-                        found=CommonsProvider().get_metadata(s['song_id'],http)
+                        found=(CommonsProvider() if s['source']=='commons' else ArchiveProvider()).get_metadata(s['song_id'],http)
                     candidates=[UnifiedCandidate(c.provider,c.page_url,c.title,match_score=100,raw_source=asdict(match_candidate(q,c))) for c in found]
+                    if not candidates:errors[s['source']]='来源中已找不到所选文件'
                     attempts=runner.run(target,candidates,settings)
                 except CatalogCancelled:raise
-                except Exception as error:errors['commons']=str(error)
+                except Exception as error:errors[s['source']]=str(error)
                 if attempts and attempts[-1]['state'] in {'COMPLETED','READY','PAUSED','CANCELLED'} or not fallback_enabled:
                     self.completed.emit({'download':True,'attempts':attempts,'candidates':[],'errors':errors});return
             stats=SourceSearchEngine(SourceRepository(self.path),default_providers(),self.cancel_event).search_queries(artist,[q])
             if self.cancel_event.is_set():raise CatalogCancelled('cancelled')
-            raw=stats['jobs'][0]['candidates']; candidates=[UnifiedCandidate(c['provider'],c['page_url'],c['title'],match_score=c['match_score'],raw_source=c) for c in raw if not (c['provider']==s['source'] and c['external_id']==s['song_id'] and s['source']=='commons')]
+            raw=stats['jobs'][0]['candidates']; candidates=[UnifiedCandidate(c['provider'],c['page_url'],c['title'],match_score=c['match_score'],raw_source=c) for c in raw if not (c['provider']==s['source'] and c['external_id']==s['song_id'] and native)]
             if not fallback_enabled:candidates=sorted(candidates,key=lambda c:-c.match_score)[:1]
             attempts+=runner.run(target,candidates,settings);errors.update(stats['jobs'][0]['errors'])
             self.completed.emit({'download':True,'attempts':attempts,'candidates':raw,'errors':errors})
@@ -129,11 +145,11 @@ class MusicWindow(QMainWindow):
         self.songs=result['rows'];self.table.setRowCount(len(self.songs));self.active_download_button=None
         for i,s in enumerate(self.songs):
             duration=f"{int(s['duration'])//60}:{int(s['duration'])%60:02d}" if s['duration'] else '--:--'
-            label=s['title']+({'instrumental':'（演奏版）','cover':'（翻唱）','live':'（现场）','remix':'（混音）'}.get(s['version'],'') if s['source']=='commons' else '')
+            label=s['title']+({'instrumental':'（演奏版）','cover':'（翻唱）','live':'（现场）','remix':'（混音）'}.get(s['version'],'') if s['source'] in {'commons','archive'} else '')+(' · Archive' if s['source']=='archive' else '')
             for j,v in enumerate([label,s['artist'],duration]):
                 item=QTableWidgetItem(v);item.setToolTip(v);self.table.setItem(i,j,item)
             b=QPushButton('下载');b.clicked.connect(lambda checked=False,s=s,b=b:self.download(s,b));self.table.setCellWidget(i,3,b)
-        self.status.setText(f"找到 {len(self.songs)} 条歌曲信息；选择目标后可查找可下载音源。")
+        self.status.setText(f"找到 {len(self.songs)} 条歌曲信息；选择目标后可查找可下载音源。"+('（24 小时内的缓存结果）' if result.get('cached') else ''))
         if any(v.get('status')=='FAILED' for v in result['statuses'].values()):
             self.status.setText('部分音乐平台查询失败，已显示可用结果。' if self.songs else '音乐平台查询失败，请稍后重试。')
     def download(self,s,button=None):
@@ -239,15 +255,17 @@ class MusicWindow(QMainWindow):
     def settings(self):
         d=QDialog(self);d.setWindowTitle('设置');form=QFormLayout(d);directory=QLineEdit(self.repo.settings().directory);choose=QPushButton('选择');row=QHBoxLayout();row.addWidget(directory);row.addWidget(choose)
         choose.clicked.connect(lambda:directory.setText(QFileDialog.getExistingDirectory(d,'下载目录',directory.text()) or directory.text()));form.addRow('下载目录',row)
-        fallback=QCheckBox('自动换源');auto=QCheckBox('完成后打开文件夹')
+        fallback=QCheckBox('自动换源');auto=QCheckBox('完成后打开文件夹');strict=QCheckBox('只下载许可已核验的文件')
+        strict.setToolTip('关闭时不检查录音许可；地址安全、文件完整性和解码检查仍然执行。')
         with connect(self.path) as db:flags=dict(db.execute("SELECT key,value FROM app_metadata WHERE key LIKE 'ui.%'").fetchall())
-        fallback.setChecked(flags.get('ui.auto_fallback','true')=='true');auto.setChecked(flags.get('ui.auto_open','false')=='true');form.addRow(fallback);form.addRow(auto)
+        fallback.setChecked(flags.get('ui.auto_fallback','true')=='true');auto.setChecked(flags.get('ui.auto_open','false')=='true');strict.setChecked(flags.get('ui.require_license','false')=='true')
+        form.addRow(fallback);form.addRow(auto);form.addRow(strict)
         buttons=QDialogButtonBox(QDialogButtonBox.StandardButton.Save|QDialogButtonBox.StandardButton.Cancel);form.addRow(buttons);buttons.accepted.connect(d.accept);buttons.rejected.connect(d.reject)
         if d.exec():
             try:
                 self.repo.save_settings(replace(self.repo.settings(),directory=directory.text().strip()))
                 with connect(self.path) as db:
-                    for k,v in [('ui.auto_fallback',fallback.isChecked()),('ui.auto_open',auto.isChecked())]:db.execute('INSERT OR REPLACE INTO app_metadata(key,value) VALUES (?,?)',(k,json.dumps(v)))
+                    for k,v in [('ui.auto_fallback',fallback.isChecked()),('ui.auto_open',auto.isChecked()),('ui.require_license',strict.isChecked())]:db.execute('INSERT OR REPLACE INTO app_metadata(key,value) VALUES (?,?)',(k,json.dumps(v)))
             except ValueError:self.status.setText('设置未保存：请选择有效的绝对路径。')
     def import_music(self):
         from melodyvault.ui.import_dialog import ImportDialog
@@ -262,7 +280,7 @@ class VideoPage(QWidget):
     def __init__(self,repo):
         super().__init__();self.repo=repo;self.process=QProcess(self);layout=QVBoxLayout(self)
         layout.addWidget(QLabel('媒体转换 · 请选择你有权提取和保存的文件'))
-        self.input=QLineEdit();self.input.setPlaceholderText('本地视频路径或 Wikimedia Commons 视频网址');layout.addWidget(self.input)
+        self.input=QLineEdit();self.input.setPlaceholderText('本地视频路径，或 Wikimedia Commons / Internet Archive 视频网址');layout.addWidget(self.input)
         choose=QPushButton('选择本地文件');choose.clicked.connect(lambda:self.input.setText(QFileDialog.getOpenFileName(self,'选择音视频')[0] or self.input.text()));layout.addWidget(choose)
         self.output_format=QComboBox();self.output_format.addItems(['MP3','WAV']);layout.addWidget(self.output_format)
         self.join_library=QCheckBox('转换后选择加入我的音乐');layout.addWidget(self.join_library)
@@ -272,7 +290,7 @@ class VideoPage(QWidget):
         self.remote_worker=None;self.remote_temp=None;self.output_root=None
         choose_dir=QPushButton('选择输出目录');choose_dir.clicked.connect(self.choose_output);layout.addWidget(choose_dir)
         open_dir=QPushButton('打开输出文件夹');open_dir.clicked.connect(self.open_folder);layout.addWidget(open_dir)
-        self.status=QLabel('网址支持 Wikimedia Commons 可核验 CC0 视频文件页或原始文件。');self.status.setWordWrap(True);layout.addWidget(self.status);layout.addStretch()
+        self.status=QLabel('网址支持 Wikimedia Commons 视频文件页/原始文件，以及 archive.org/details/… 或 /download/… 视频。');self.status.setWordWrap(True);layout.addWidget(self.status);layout.addStretch()
         self.process.finished.connect(self.done);self.process.errorOccurred.connect(self.process_error)
         self.process.readyReadStandardOutput.connect(self.conversion_progress)
         self.progress_buffer=''
@@ -304,10 +322,14 @@ class VideoPage(QWidget):
             except (ImportError,RuntimeError):pass
         if not ff:self.status.setText('未安装 FFmpeg，当前无法转换。');return
         if not remote and self.input.text().strip().startswith(('http://','https://')):
-            from melodyvault.downloads.remote_video import CommonsVideoWorker
+            from urllib.parse import urlsplit
+            from melodyvault.downloads.remote_video import CommonsVideoWorker,ArchiveVideoWorker
+            from melodyvault.downloads.eligibility import license_required
             if self.remote_worker:return
             self.start.setEnabled(False);self.cancel_requested=False
-            self.remote_worker=CommonsVideoWorker(self.input.text().strip(),Path(self.output_root or self.repo.settings().directory)/'Video to MP3',self)
+            url=self.input.text().strip();folder=Path(self.output_root or self.repo.settings().directory)/'Video to MP3'
+            worker=ArchiveVideoWorker if (urlsplit(url).hostname or '').lower() in {'archive.org','www.archive.org'} else CommonsVideoWorker
+            self.remote_worker=worker(url,folder,self,require_license=license_required(self.repo.path))
             self.remote_worker.progress.connect(self.status.setText);self.remote_worker.failed.connect(self.status.setText)
             self.remote_worker.ready.connect(self.remote_ready);self.remote_worker.finished.connect(self.remote_finished);self.remote_worker.start();return
         source=Path(remote['path'] if remote else self.input.text())
@@ -321,7 +343,7 @@ class VideoPage(QWidget):
         from melodyvault.downloads.models import DownloadCandidate
         from melodyvault.database.catalog import utc_now
         identity='local-video:'+uuid4().hex
-        self.candidate=DownloadCandidate(identity,identity,'Video to MP3',name,'unknown','commons' if remote else 'local_video',remote['source_url'] if remote else '',file_format=fmt)
+        self.candidate=DownloadCandidate(identity,identity,'Video to MP3',name,'unknown',remote.get('provider','commons') if remote else 'local_video',remote['source_url'] if remote else '',file_format=fmt)
         self.candidate.evidence=({'license_url':remote['license_url'],'source_url':remote['source_url']} if remote else {'user_selected_local_file':str(source.resolve())});self.candidate.evidence['source_type']='conversion';self.candidate.verified_at=utc_now()
         target={'song_id':identity,'recording_id':identity,'namespace':'local_video','local_video_path':str(source.resolve()),'title':name,'artist':{'id':'local','name':'Video to MP3'},'version':'unknown','confirmed':True}
         if remote:target['remote_source_url']=remote['source_url']

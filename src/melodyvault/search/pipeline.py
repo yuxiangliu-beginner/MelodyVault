@@ -33,7 +33,7 @@ class UnifiedMusicSearchService:
 
     def _run_locked(self,artist,song,*,explicit_selection=False,native_target=None,dry_run=None):
         if native_target is not None:
-            if not explicit_selection or native_target.get('namespace') not in {'commons','ccmixter'}:
+            if not explicit_selection or native_target.get('namespace') not in {'commons','ccmixter','archive'}:
                 raise ValueError('来源原生录音需要明确选择')
             if native_target.get('song_id')!=song.id or native_target.get('recording_id') not in {r.mbid for r in song.recordings}:
                 raise ValueError('来源原生录音与所选歌曲不一致')

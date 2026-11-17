@@ -293,15 +293,18 @@ def test_official_url_expiry_refreshes_before_bounded_retry(setup,audio):
     assert repo.get(jid)['state']=='COMPLETED' and len(calls)==2 and calls[0]!=calls[1]
 
 
-def test_sha256_mismatch_and_existing_different_file_are_rejected(setup,audio,tmp_path):
+def test_sha256_mismatch_rejected_and_existing_different_file_never_overwritten(setup,audio,tmp_path):
     from melodyvault.downloads.files import publish
     c=approve(setup);part=tmp_path/'owned.part';part.write_bytes(audio)
     c.checksums['sha256']='0'*64
     with pytest.raises(DownloadError,match='SHA256'):verify_file(part,c,100000)
     c.checksums.pop('sha256');verified=verify_file(part,c,100000);final=publish(part,setup[1].directory,c,verified)
     final.write_bytes(b'pre-existing different user content');part.write_bytes(audio)
-    with pytest.raises(DownloadError) as error:publish(part,setup[1].directory,c,verified)
-    assert error.value.code=='FILE_CONFLICT' and final.read_bytes()==b'pre-existing different user content'
+    # A different file already uses the name: keep it untouched, store the new one beside it.
+    second=publish(part,setup[1].directory,c,verified)
+    assert final.read_bytes()==b'pre-existing different user content'
+    assert second.name=='Unit Test - Test tone (2).wav' and second.read_bytes()==audio
+    part.write_bytes(audio);assert publish(part,setup[1].directory,c,verified)==second  # identical bytes are reused
 
 
 def test_automatic_opt_in_revoked_before_run_prevents_transfer(setup,audio):

@@ -9,7 +9,7 @@ import httpx
 from melodyvault.downloads.models import DownloadCandidate,DownloadSettings,DownloadError,Interrupted
 from melodyvault.downloads.security import audio_client,validate_url,redact_payload,resource_identity,strong_etag
 from melodyvault.downloads.files import contained,verify_file,publish,check_space,hashes,decode_file
-from melodyvault.downloads.eligibility import DownloadEligibilityService
+from melodyvault.downloads.eligibility import DownloadEligibilityService,license_required
 from melodyvault.downloads.targets import search_values
 from melodyvault.catalog.models import CatalogCancelled
 from melodyvault.catalog.musicbrainz import MusicBrainzClient
@@ -69,7 +69,7 @@ class Bandwidth:
 class DownloadManager:
     def __init__(self,repository,*,providers_factory=None,verifier_factory=None,transport=None,source_http_factory=None,progress=None):
         self.repository=repository;self.path=repository.path;self.transport=transport;self.progress=progress or (lambda:None)
-        self.providers_factory=providers_factory;self.verifier_factory=verifier_factory or DownloadEligibilityService
+        self.providers_factory=providers_factory;self.verifier_factory=verifier_factory or (lambda http,mb=None:DownloadEligibilityService(http,mb,require_license=license_required(repository.path)))
         self.source_http_factory=source_http_factory or SourceHTTP;self.controls={};self.lock=threading.RLock();self.file_locks={};self.running=False
     def recover(self):
         with RunLock(self.path):self.repository.recover()

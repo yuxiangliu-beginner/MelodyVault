@@ -138,3 +138,21 @@ class SourceDiscoveryService:
                 self.progress({'message':'核验官方 API '+domain})
                 results[domain]=self.check(domain,http)
             return {'sources':results,'api_requests':http.requests,'retries':http.retries}
+
+
+def refresh_stale_builtins(path,providers,cancel=None,http_factory=None,max_age=6*86400):
+    """Re-run the one-request official API check for built-in sources about to lapse.
+
+    provider_allowed() stops approving a source 7 days after its last check, which
+    silently turned every Commons/Archive download into SOURCE_DISABLED. Sources the
+    user disabled, or that never passed review, are left alone.
+    """
+    from melodyvault.database.discovery import DiscoveryRepository,BUILTINS
+    repo=DiscoveryRepository(path);service=SourceDiscoveryService(repo,cancel,http_factory=http_factory);refreshed=[]
+    for row in repo.rows():
+        if BUILTINS.get(row['domain'],('',None))[1] not in providers:continue
+        if row['manual_disabled'] or row['review_status']!='APPROVED' or time.time()-row['checked_at']<max_age:continue
+        try:service.check(row['domain']);refreshed.append(row['domain'])
+        except CatalogCancelled:raise
+        except Exception:continue  # the source stays stale; downloads report SOURCE_DISABLED
+    return refreshed
